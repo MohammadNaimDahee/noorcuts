@@ -1,8 +1,30 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Amiri Quran';
+  src: url('/fonts/AmiriQuran-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Scheherazade New';
+  src: url('/fonts/ScheherazadeNew-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Noto Naskh Arabic';
+  src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Reem Kufi';
+  src: url('/fonts/ReemKufi-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lateef';
+  src: url('/fonts/Lateef-Regular.ttf') format('truetype');
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,15 +34,60 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Dark mode is always on — no light mode media query needed */
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Studio utility classes */
+.studio-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #71717a;
+}
+
+.studio-input {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #2a2a4a;
+  background: #0f0f20;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #e4e4e7;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.studio-input:focus {
+  border-color: #10b981;
+}
+
+.studio-select {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #2a2a4a;
+  background: #0f0f20;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #e4e4e7;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.studio-select:focus {
+  border-color: #10b981;
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

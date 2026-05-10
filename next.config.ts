@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    "@remotion/bundler",
+    "@remotion/renderer",
+    "@remotion/cli",
+    "@remotion/studio",
+    "esbuild",
+    "better-sqlite3",
+  ],
 };
 
 export default nextConfig;

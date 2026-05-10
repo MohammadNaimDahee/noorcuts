@@ -1,0 +1,133 @@
+export interface Ayah {
+  surah: number;
+  ayah: number;
+  surahName: string;
+  surahNameEn: string;
+  arabic: string;
+  translation_en: string;
+}
+
+export interface AyahTimestamp {
+  ayah: number;
+  startMs: number;
+  endMs: number;
+}
+
+/** Word-level timing segment from reciter DB: [wordIndex, endWordIndex, startMs, endMs] */
+export type WordSegment = [string, string, string, string];
+
+export interface AyahRecitation {
+  surahNumber: number;
+  ayahNumber: number;
+  audioUrl: string;
+  duration: number; // seconds
+  segments: WordSegment[];
+}
+
+export interface Reciter {
+  id: string;
+  name: string;
+  dbPath: string;
+  type: "ayah" | "surah";
+}
+
+export interface Template {
+  id: number;
+  name: string;
+  backgroundType: "color" | "image";
+  backgroundColor: string;
+  backgroundImage: string | null;
+  arabicFontSize: number;
+  translationFontSize: number;
+  arabicColor: string;
+  translationColor: string;
+  createdAt: string;
+}
+
+export interface RenderJob {
+  id: number;
+  surah: number;
+  ayahStart: number;
+  ayahEnd: number;
+  reciterId: string;
+  templateId: number;
+  status: "pending" | "rendering" | "completed" | "failed";
+  outputPath: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export type VideoFormat = "vertical" | "horizontal" | "square";
+
+export interface VideoFormatConfig {
+  width: number;
+  height: number;
+  label: string;
+}
+
+export const VIDEO_FORMATS: Record<VideoFormat, VideoFormatConfig> = {
+  vertical: { width: 1080, height: 1920, label: "Vertical 9:16 (Shorts/Reels)" },
+  horizontal: { width: 1920, height: 1080, label: "Horizontal 16:9 (YouTube)" },
+  square: { width: 1080, height: 1080, label: "Square 1:1 (Instagram)" },
+};
+
+export interface BackgroundVideo {
+  id: string;
+  url: string; // Pexels video URL (HD or SD)
+  thumbnailUrl: string;
+  duration: number; // seconds
+  width: number;
+  height: number;
+}
+
+export type ArabicFontId = "amiri-quran" | "scheherazade" | "noto-naskh" | "reem-kufi" | "lateef";
+
+export interface ArabicFontConfig {
+  id: ArabicFontId;
+  label: string;
+  family: string;
+  file: string; // filename in public/fonts/
+  sampleText: string;
+}
+
+export const ARABIC_FONTS: ArabicFontConfig[] = [
+  { id: "amiri-quran", label: "Amiri Quran", family: "Amiri Quran", file: "AmiriQuran-Regular.ttf", sampleText: "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ" },
+  { id: "scheherazade", label: "Scheherazade", family: "Scheherazade New", file: "ScheherazadeNew-Regular.ttf", sampleText: "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ" },
+  { id: "noto-naskh", label: "Noto Naskh", family: "Noto Naskh Arabic", file: "NotoNaskhArabic-Regular.ttf", sampleText: "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ" },
+  { id: "reem-kufi", label: "Reem Kufi", family: "Reem Kufi", file: "ReemKufi-Regular.ttf", sampleText: "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ" },
+  { id: "lateef", label: "Lateef", family: "Lateef", file: "Lateef-Regular.ttf", sampleText: "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ" },
+];
+
+export interface RenderRequest {
+  surah: number;
+  ayahStart: number;
+  ayahEnd: number;
+  reciterId: string;
+  templateId: number;
+  format: VideoFormat;
+  backgroundVideos?: BackgroundVideo[];
+  arabicFont?: ArabicFontId;
+}
+
+export interface VideoCompositionProps {
+  ayahs: Ayah[];
+  timestamps: AyahTimestamp[];
+  audioUrls: string[];
+  backgroundColor: string;
+  backgroundImage: string | null;
+  backgroundVideos: string[]; // local file paths to background video clips (sequential playlist)
+  arabicFontSize: number;
+  translationFontSize: number;
+  arabicColor: string;
+  translationColor: string;
+  arabicFontFamily: string; // CSS font-family for Arabic text
+  format: VideoFormat;
+}
+
+export interface SurahInfo {
+  id: number;
+  name: string;
+  nameEn: string;
+  totalVerses: number;
+}

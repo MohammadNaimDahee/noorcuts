@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+output/
+public/temp-bg/
+noorcuts.db
+noorcuts.db-shm
+noorcuts.db-wal
+plan.md
