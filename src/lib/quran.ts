@@ -1,7 +1,17 @@
 import fs from "fs";
 import path from "path";
-import Database from "better-sqlite3";
 import type { Ayah, SurahInfo, AyahRecitation, AyahTimestamp, Reciter, WordSegment } from "@/types";
+
+// Lazy-load better-sqlite3 to avoid crashing on Vercel (no native modules)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _Database: any = null;
+function getSqlite() {
+  if (!_Database) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    _Database = require("better-sqlite3");
+  }
+  return _Database;
+}
 
 const QURAN_PATH = path.join(process.cwd(), "data", "quran.json");
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -76,7 +86,9 @@ export function getReciters(): Reciter[] {
 }
 
 /** Open a reciter DB (read-only) */
-function openReciterDb(reciter: Reciter): Database.Database {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function openReciterDb(reciter: Reciter): any {
+  const Database = getSqlite();
   return new Database(reciter.dbPath, { readonly: true });
 }
 
@@ -112,7 +124,8 @@ export function getRecitations(
  *  Some DBs use per-surah ayah numbers (1,2,3...) while others use global ayah numbers.
  *  We detect this by checking if the surah's min ayah_number matches ayahStart. */
 function getAyahLevelRecitations(
-  db: Database.Database,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
   surah: number,
   ayahStart: number,
   ayahEnd: number
@@ -178,7 +191,8 @@ function getAyahLevelRecitations(
  *  Schema: segments(surah_number, ayah_number, duration_sec, timestamp_from, timestamp_to, segments)
  *  segments column: [[wordIndex, startMs, endMs], ...] */
 function getSurahLevelRecitations(
-  db: Database.Database,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
   surah: number,
   ayahStart: number,
   ayahEnd: number

@@ -1,20 +1,24 @@
-import Database from "better-sqlite3";
 import path from "path";
 import type { Template, RenderJob } from "@/types";
 
 const DB_PATH = path.join(process.cwd(), "noorcuts.db");
 
-let db: Database.Database | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let db: any = null;
 
-export function getDb(): Database.Database {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getDb(): any {
   if (db) return db;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Database = require("better-sqlite3");
   db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
   runMigrations(db);
   return db;
 }
 
-function runMigrations(database: Database.Database): void {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function runMigrations(database: any): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
