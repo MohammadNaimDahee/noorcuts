@@ -179,6 +179,28 @@ export function cleanupTempDir(tempDir: string): void {
   }
 }
 
+/** Prepend silence to an audio file */
+export async function prependSilence(
+  inputPath: string,
+  outputPath: string,
+  silenceMs: number
+): Promise<string> {
+  const silenceSec = (silenceMs / 1000).toFixed(3);
+  await execFileAsync("ffmpeg", [
+    "-f", "lavfi",
+    "-t", silenceSec,
+    "-i", "anullsrc=r=44100:cl=stereo",
+    "-i", inputPath,
+    "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[out]",
+    "-map", "[out]",
+    "-c:a", "libmp3lame",
+    "-b:a", "128k",
+    "-y",
+    outputPath,
+  ]);
+  return outputPath;
+}
+
 export async function getAudioDurationMs(filePath: string): Promise<number> {
   const { stdout } = await execFileAsync("ffprobe", [
     "-v",

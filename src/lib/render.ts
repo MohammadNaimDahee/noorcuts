@@ -18,6 +18,7 @@ import {
   extractAudioSegment,
   muxAudio,
   cleanupTempDir,
+  prependSilence,
 } from "@/lib/ffmpeg";
 import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId, TransitionEffect, SurahMeta } from "@/types";
 import { ARABIC_FONTS } from "@/types";
@@ -244,6 +245,15 @@ export async function triggerRender(
 
     // Mux audio onto the silent video
     emitProgress("Muxing audio", 92);
+
+    // Prepend silence to audio if surah intro is enabled
+    let finalAudioPath = concatAudioPath;
+    if (surahIntro) {
+      const silentAudioPath = path.join(jobTempDir, "audio-with-intro.mp3");
+      await prependSilence(concatAudioPath, silentAudioPath, INTRO_DURATION_MS);
+      finalAudioPath = silentAudioPath;
+    }
+
     const userOutputDir = path.join(OUTPUT_DIR, userId);
     if (!fs.existsSync(userOutputDir)) {
       fs.mkdirSync(userOutputDir, { recursive: true });
@@ -252,7 +262,7 @@ export async function triggerRender(
       userOutputDir,
       `noorcuts-${surah}-${ayahStart}-${ayahEnd}-${jobId}.mp4`
     );
-    await muxAudio(silentVideoPath, concatAudioPath, finalOutputPath);
+    await muxAudio(silentVideoPath, finalAudioPath, finalOutputPath);
 
     cleanupTempDir(jobTempDir);
     cleanupTempDir(bgVideoPublicDir);
