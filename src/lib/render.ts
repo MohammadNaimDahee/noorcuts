@@ -46,6 +46,7 @@ export async function triggerRender(
   updateRenderJob(jobId, { status: "rendering" });
 
   const jobTempDir = path.join(TEMP_DIR, `job-${jobId}`);
+  const bgVideoPublicDir = path.join(process.cwd(), "public", "temp-bg", `job-${jobId}`);
 
   try {
     // Gather data
@@ -113,15 +114,14 @@ export async function triggerRender(
 
     // Download background videos if provided
     // Videos must be in public/ so Remotion can serve them via staticFile()
-    const BG_VIDEO_PUBLIC_DIR = path.join(process.cwd(), "public", "temp-bg", `job-${jobId}`);
     const bgVideoStaticPaths: string[] = [];
     if (backgroundVideos.length > 0) {
       onProgress?.("Downloading background videos", 15);
-      fs.mkdirSync(BG_VIDEO_PUBLIC_DIR, { recursive: true });
+      fs.mkdirSync(bgVideoPublicDir, { recursive: true });
       for (let i = 0; i < backgroundVideos.length; i++) {
         const bgVideo = backgroundVideos[i];
         const filename = `bg-video-${i}.mp4`;
-        const localPath = path.join(BG_VIDEO_PUBLIC_DIR, filename);
+        const localPath = path.join(bgVideoPublicDir, filename);
         await downloadFile(bgVideo.url, localPath);
         // staticFile() paths are relative to public/
         bgVideoStaticPaths.push(`temp-bg/job-${jobId}/${filename}`);
@@ -194,14 +194,14 @@ export async function triggerRender(
     await muxAudio(silentVideoPath, concatAudioPath, finalOutputPath);
 
     cleanupTempDir(jobTempDir);
-    cleanupTempDir(BG_VIDEO_PUBLIC_DIR);
+    cleanupTempDir(bgVideoPublicDir);
 
     onProgress?.("Complete", 100);
     updateRenderJob(jobId, { status: "completed", outputPath: finalOutputPath });
     return { jobId, outputPath: finalOutputPath };
   } catch (err) {
     cleanupTempDir(jobTempDir);
-    cleanupTempDir(BG_VIDEO_PUBLIC_DIR);
+    cleanupTempDir(bgVideoPublicDir);
     const message = err instanceof Error ? err.message : "Unknown render error";
     updateRenderJob(jobId, { status: "failed", errorMessage: message });
     throw err;
