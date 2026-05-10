@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import path from "path";
 import { auth } from "@clerk/nextjs/server";
 import { triggerRender } from "@/lib/render";
-import { getRenderHistory } from "@/lib/db";
+import { getRenderHistory, cleanupExpiredRenders } from "@/lib/db";
 import type { RenderRequest } from "@/types";
 
 export async function POST(request: Request): Promise<Response> {
@@ -11,8 +11,10 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  try { cleanupExpiredRenders(); } catch { /* ignore */ }
+
   const body = (await request.json()) as RenderRequest;
-  const { surah, ayahStart, ayahEnd, reciterId, templateId, format, backgroundVideos, arabicFont } = body;
+  const { surah, ayahStart, ayahEnd, reciterId, templateId, format, backgroundVideos, arabicFont, projectId } = body;
 
   if (!surah || !ayahStart || !ayahEnd || !reciterId || !templateId) {
     return NextResponse.json(
@@ -21,7 +23,6 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // Stream progress via Server-Sent Events
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -30,7 +31,6 @@ export async function POST(request: Request): Promise<Response> {
     await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
   };
 
-  // Run render in background, streaming progress
   (async () => {
     try {
       const result = await triggerRender(
@@ -39,6 +39,7 @@ export async function POST(request: Request): Promise<Response> {
         backgroundVideos || [],
         arabicFont || "amiri-quran",
         userId,
+        projectId,
         async (stage, progress) => {
           await sendEvent({ type: "progress", stage, progress });
         }
@@ -63,10 +64,18 @@ export async function POST(request: Request): Promise<Response> {
   });
 }
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: Request): Promise<NextResponse> {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.json(getRenderHistory(userId));
+
+  try { cleanupExpiredRenders(); } catch { /* ignore */ }
+
+  const { searchParams } = new URL(request.url);
+  const projectId = searchParams.get("projectId");
+
+  return NextResponse.json(
+    getRenderHistory(userId, projectId ? parseInt(projectId, 10) : undefined)
+  );
 }

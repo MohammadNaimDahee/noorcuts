@@ -51,11 +51,13 @@ export interface RenderJob {
   ayahEnd: number;
   reciterId: string;
   templateId: number;
-  status: "pending" | "rendering" | "completed" | "failed";
+  status: "pending" | "rendering" | "completed" | "failed" | "expired";
   outputPath: string | null;
   errorMessage: string | null;
   createdAt: string;
   completedAt: string | null;
+  projectId: number | null;
+  expiresAt: string | null;
 }
 
 export type VideoFormat = "vertical" | "horizontal" | "square";
@@ -108,11 +110,36 @@ export interface RenderRequest {
   format: VideoFormat;
   backgroundVideos?: BackgroundVideo[];
   arabicFont?: ArabicFontId;
+  projectId?: number;
+}
+
+export interface Project {
+  id: number;
+  userId: string;
+  name: string;
+  description: string;
+  surah: number | null;
+  ayahStart: number | null;
+  ayahEnd: number | null;
+  reciterId: string | null;
+  templateId: number | null;
+  format: string;
+  arabicFont: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Word-level timing for a single ayah, with times relative to the full video timeline */
+export interface AyahWordTimings {
+  ayah: number;
+  /** Each entry: [wordIndex, wordEndIndex, absoluteStartMs, absoluteEndMs] */
+  words: [number, number, number, number][];
 }
 
 export interface VideoCompositionProps {
   ayahs: Ayah[];
   timestamps: AyahTimestamp[];
+  wordTimings: AyahWordTimings[]; // word-level timing per ayah (parallel to ayahs/timestamps)
   audioUrls: string[];
   backgroundColor: string;
   backgroundImage: string | null;

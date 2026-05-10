@@ -19,7 +19,8 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   // Prevent directory traversal
   const basename = path.basename(file);
-  const filePath = path.join(process.cwd(), "output", basename);
+  // Videos are stored per-user: output/{userId}/{filename}
+  const filePath = path.join(process.cwd(), "output", userId, basename);
 
   // Verify the user owns this render
   const history = getRenderHistory(userId);
@@ -31,7 +32,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   if (!fs.existsSync(filePath)) {
-    return NextResponse.json({ error: "File not found" }, { status: 404 });
+    return NextResponse.json({ error: "File not found or expired" }, { status: 404 });
   }
 
   const buffer = fs.readFileSync(filePath);

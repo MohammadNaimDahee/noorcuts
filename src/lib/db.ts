@@ -1,7 +1,10 @@
 import path from "path";
+import fs from "fs";
 import type { Template, RenderJob } from "@/types";
+import type { Project } from "@/types";
 
 const DB_PATH = path.join(process.cwd(), "noorcuts.db");
+const OUTPUT_DIR = path.join(process.cwd(), "output");
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let db: any = null;
@@ -36,6 +39,7 @@ function runMigrations(database: any): void {
     CREATE TABLE IF NOT EXISTS render_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL DEFAULT '',
+      project_id INTEGER,
       surah INTEGER NOT NULL,
       ayah_start INTEGER NOT NULL,
       ayah_end INTEGER NOT NULL,
@@ -46,20 +50,49 @@ function runMigrations(database: any): void {
       error_message TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       completed_at TEXT,
-      FOREIGN KEY (template_id) REFERENCES templates(id)
+      expires_at TEXT,
+      FOREIGN KEY (template_id) REFERENCES templates(id),
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      surah INTEGER,
+      ayah_start INTEGER,
+      ayah_end INTEGER,
+      reciter_id TEXT,
+      template_id INTEGER,
+      format TEXT DEFAULT 'vertical',
+      arabic_font TEXT DEFAULT 'amiri-quran',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // Migrations for existing DBs
+  const rhCols = database.prepare("PRAGMA table_info(render_history)").all() as Array<{ name: string }>;
+  if (!rhCols.some((c) => c.name === "user_id")) {
+    database.exec("ALTER TABLE render_history ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
+  }
+  if (!rhCols.some((c) => c.name === "project_id")) {
+    database.exec("ALTER TABLE render_history ADD COLUMN project_id INTEGER");
+  }
+  if (!rhCols.some((c) => c.name === "expires_at")) {
+    database.exec("ALTER TABLE render_history ADD COLUMN expires_at TEXT");
+  }
+
+  // Mark any stale "rendering" jobs as failed (server restarted while they were running)
+  database.exec(
+    "UPDATE render_history SET status = 'failed', error_message = 'Server restarted during render' WHERE status = 'rendering'"
+  );
 
   // Insert default templates if none exist
   const count = database
     .prepare("SELECT COUNT(*) as count FROM templates")
     .get() as { count: number };
-
-  // Add user_id column if missing (migration for existing DBs)
-  const columns = database.prepare("PRAGMA table_info(render_history)").all() as Array<{ name: string }>;
-  if (!columns.some((c) => c.name === "user_id")) {
-    database.exec("ALTER TABLE render_history ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
-  }
 
   if (count.count === 0) {
     const insert = database.prepare(
@@ -67,33 +100,19 @@ function runMigrations(database: any): void {
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
 
-    // 1. Classic Dark - elegant black with gold accents
     insert.run("Classic Dark", "color", "#0a0a14", 52, 28, "#FFFFFF", "#C8C0B0");
-
-    // 2. Midnight Blue - deep navy with silver text
     insert.run("Midnight Blue", "color", "#0a1628", 52, 28, "#E8E4DC", "#8899AA");
-
-    // 3. Desert Sand - warm dark brown tones
     insert.run("Desert Sand", "color", "#1a1008", 50, 26, "#F5E6C8", "#C4A87A");
-
-    // 4. Emerald Night - dark green with light text
     insert.run("Emerald Night", "color", "#061210", 52, 28, "#E0F0E8", "#7ABAAA");
-
-    // 5. Royal Purple - deep purple with cream text
     insert.run("Royal Purple", "color", "#10081a", 50, 26, "#F0E8F5", "#B09AC4");
-
-    // 6. Pure White - clean minimal light theme
     insert.run("Pure White", "color", "#F5F3EE", 50, 26, "#1A1A2E", "#555555");
-
-    // 7. Warm Charcoal - dark gray with warm white
     insert.run("Warm Charcoal", "color", "#1C1C1C", 52, 28, "#F8F0E0", "#A09888");
-
-    // 8. Ocean Deep - dark teal
     insert.run("Ocean Deep", "color", "#081418", 50, 26, "#D8F0F0", "#68A0A8");
   }
 }
 
-// Template queries
+// ═══════ Templates ═══════
+
 export function getTemplates(): Template[] {
   const rows = getDb()
     .prepare("SELECT * FROM templates ORDER BY id")
@@ -123,21 +142,25 @@ function rowToTemplate(row: Record<string, unknown>): Template {
   };
 }
 
-// Render history queries
+// ═══════ Render History ═══════
+
 export function createRenderJob(
   surah: number,
   ayahStart: number,
   ayahEnd: number,
   reciterId: string,
   templateId: number,
-  userId: string
+  userId: string,
+  projectId?: number
 ): number {
+  // Expires 30 minutes from now
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const result = getDb()
     .prepare(
-      `INSERT INTO render_history (user_id, surah, ayah_start, ayah_end, reciter_id, template_id, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending')`
+      `INSERT INTO render_history (user_id, project_id, surah, ayah_start, ayah_end, reciter_id, template_id, status, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
     )
-    .run(userId, surah, ayahStart, ayahEnd, reciterId, templateId);
+    .run(userId, projectId ?? null, surah, ayahStart, ayahEnd, reciterId, templateId, expiresAt);
   return Number(result.lastInsertRowid);
 }
 
@@ -170,11 +193,25 @@ export function updateRenderJob(
     .run(...values);
 }
 
-export function getRenderHistory(userId: string): RenderJob[] {
+export function getRenderHistory(userId: string, projectId?: number): RenderJob[] {
+  let query = "SELECT * FROM render_history WHERE user_id = ?";
+  const params: unknown[] = [userId];
+
+  if (projectId !== undefined) {
+    query += " AND project_id = ?";
+    params.push(projectId);
+  }
+
+  query += " ORDER BY created_at DESC LIMIT 50";
+
   const rows = getDb()
-    .prepare("SELECT * FROM render_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50")
-    .all(userId) as Array<Record<string, unknown>>;
-  return rows.map((row) => ({
+    .prepare(query)
+    .all(...params) as Array<Record<string, unknown>>;
+  return rows.map(rowToRenderJob);
+}
+
+function rowToRenderJob(row: Record<string, unknown>): RenderJob {
+  return {
     id: row.id as number,
     surah: row.surah as number,
     ayahStart: row.ayah_start as number,
@@ -186,7 +223,124 @@ export function getRenderHistory(userId: string): RenderJob[] {
     errorMessage: (row.error_message as string) || null,
     createdAt: row.created_at as string,
     completedAt: (row.completed_at as string) || null,
-  }));
+    projectId: (row.project_id as number) || null,
+    expiresAt: (row.expires_at as string) || null,
+  };
 }
 
-// Reciter discovery is now handled by src/lib/quran.ts getReciters()
+// ═══════ Projects ═══════
+
+export function createProject(userId: string, name: string, description?: string): number {
+  const result = getDb()
+    .prepare(
+      `INSERT INTO projects (user_id, name, description) VALUES (?, ?, ?)`
+    )
+    .run(userId, name, description || "");
+  return Number(result.lastInsertRowid);
+}
+
+export function getProjects(userId: string): Project[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC")
+    .all(userId) as Array<Record<string, unknown>>;
+  return rows.map(rowToProject);
+}
+
+export function getProject(id: number, userId: string): Project | null {
+  const row = getDb()
+    .prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?")
+    .get(id, userId) as Record<string, unknown> | undefined;
+  return row ? rowToProject(row) : null;
+}
+
+export function updateProject(
+  id: number,
+  userId: string,
+  updates: Partial<Omit<Project, "id" | "userId" | "createdAt">>
+): void {
+  const sets: string[] = ["updated_at = datetime('now')"];
+  const values: unknown[] = [];
+
+  if (updates.name !== undefined) { sets.push("name = ?"); values.push(updates.name); }
+  if (updates.description !== undefined) { sets.push("description = ?"); values.push(updates.description); }
+  if (updates.surah !== undefined) { sets.push("surah = ?"); values.push(updates.surah); }
+  if (updates.ayahStart !== undefined) { sets.push("ayah_start = ?"); values.push(updates.ayahStart); }
+  if (updates.ayahEnd !== undefined) { sets.push("ayah_end = ?"); values.push(updates.ayahEnd); }
+  if (updates.reciterId !== undefined) { sets.push("reciter_id = ?"); values.push(updates.reciterId); }
+  if (updates.templateId !== undefined) { sets.push("template_id = ?"); values.push(updates.templateId); }
+  if (updates.format !== undefined) { sets.push("format = ?"); values.push(updates.format); }
+  if (updates.arabicFont !== undefined) { sets.push("arabic_font = ?"); values.push(updates.arabicFont); }
+
+  values.push(id, userId);
+  getDb()
+    .prepare(`UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`)
+    .run(...values);
+}
+
+export function deleteProject(id: number, userId: string): void {
+  getDb()
+    .prepare("DELETE FROM projects WHERE id = ? AND user_id = ?")
+    .run(id, userId);
+}
+
+function rowToProject(row: Record<string, unknown>): Project {
+  return {
+    id: row.id as number,
+    userId: row.user_id as string,
+    name: row.name as string,
+    description: (row.description as string) || "",
+    surah: (row.surah as number) || null,
+    ayahStart: (row.ayah_start as number) || null,
+    ayahEnd: (row.ayah_end as number) || null,
+    reciterId: (row.reciter_id as string) || null,
+    templateId: (row.template_id as number) || null,
+    format: (row.format as string) || "vertical",
+    arabicFont: (row.arabic_font as string) || "amiri-quran",
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
+// ═══════ Cleanup expired renders ═══════
+
+export function cleanupExpiredRenders(): number {
+  const now = new Date().toISOString();
+  const expired = getDb()
+    .prepare(
+      "SELECT id, output_path, user_id FROM render_history WHERE expires_at IS NOT NULL AND expires_at < ? AND output_path IS NOT NULL"
+    )
+    .all(now) as Array<{ id: number; output_path: string; user_id: string }>;
+
+  let cleaned = 0;
+  for (const row of expired) {
+    // Delete the file
+    if (row.output_path && fs.existsSync(row.output_path)) {
+      try {
+        fs.unlinkSync(row.output_path);
+        cleaned++;
+      } catch {
+        // ignore file delete errors
+      }
+    }
+    // Mark as expired in DB
+    getDb()
+      .prepare("UPDATE render_history SET status = 'expired', output_path = NULL WHERE id = ?")
+      .run(row.id);
+  }
+
+  // Clean up empty user directories
+  if (fs.existsSync(OUTPUT_DIR)) {
+    const userDirs = fs.readdirSync(OUTPUT_DIR);
+    for (const dir of userDirs) {
+      const dirPath = path.join(OUTPUT_DIR, dir);
+      if (fs.statSync(dirPath).isDirectory()) {
+        const files = fs.readdirSync(dirPath);
+        if (files.length === 0) {
+          fs.rmdirSync(dirPath);
+        }
+      }
+    }
+  }
+
+  return cleaned;
+}

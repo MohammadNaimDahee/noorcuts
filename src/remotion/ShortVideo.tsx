@@ -123,6 +123,22 @@ function isLightBg(color: string): boolean {
   return (r * 299 + g * 587 + b * 114) / 1000 > 128;
 }
 
+/** Linearly interpolate between two hex colors */
+function lerpColor(from: string, to: string, t: number): string {
+  const f = from.replace("#", "");
+  const t2 = to.replace("#", "");
+  const fr = parseInt(f.substring(0, 2), 16);
+  const fg = parseInt(f.substring(2, 4), 16);
+  const fb = parseInt(f.substring(4, 6), 16);
+  const tr = parseInt(t2.substring(0, 2), 16);
+  const tg = parseInt(t2.substring(2, 4), 16);
+  const tb = parseInt(t2.substring(4, 6), 16);
+  const r = Math.round(fr + (tr - fr) * t);
+  const g = Math.round(fg + (tg - fg) * t);
+  const b = Math.round(fb + (tb - fb) * t);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
 /** Horizontal ornamental divider */
 const Divider: React.FC<{ width?: number; opacity?: number; color?: string }> = ({
   width = 240,
@@ -155,9 +171,95 @@ const Divider: React.FC<{ width?: number; opacity?: number; color?: string }> = 
   </div>
 );
 
+/** Noorcuts watermark logo (inline SVG for Remotion rendering) */
+const NoorLogoMark: React.FC<{ size?: number }> = ({ size = 32 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 64 64"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <defs>
+      <linearGradient id="wm-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stopColor="#059669" />
+        <stop offset="100%" stopColor="#047857" />
+      </linearGradient>
+      <linearGradient id="wm-gold" x1="24" y1="16" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stopColor="#fde68a" />
+        <stop offset="100%" stopColor="#f59e0b" />
+      </linearGradient>
+    </defs>
+    <circle cx="32" cy="32" r="30" fill="url(#wm-bg)" />
+    <circle cx="24" cy="28" r="18" fill="#047857" opacity="0.5" />
+    <path d="M27 19l18 13-18 13z" fill="url(#wm-gold)" />
+    <line x1="50" y1="10" x2="56" y2="4" stroke="#fde68a" strokeWidth="2" strokeLinecap="round" opacity="0.8" />
+    <line x1="54" y1="16" x2="60" y2="12" stroke="#fde68a" strokeWidth="1.5" strokeLinecap="round" opacity="0.6" />
+    <line x1="52" y1="6" x2="56" y2="2" stroke="#fde68a" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+  </svg>
+);
+
+/** Noorcuts watermark — appears at intro and outro */
+const Watermark: React.FC<{
+  position: "top-left" | "bottom-right";
+  opacity: number;
+  scaleFactor: number;
+}> = ({ position, opacity, scaleFactor }) => (
+  <div
+    style={{
+      position: "absolute",
+      top: position === "top-left" ? 90 : undefined,
+      left: position === "top-left" ? 80 : undefined,
+      bottom: position === "bottom-right" ? 90 : undefined,
+      right: position === "bottom-right" ? 80 : undefined,
+      display: "flex",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10 * scaleFactor,
+      opacity,
+      zIndex: 10,
+    }}
+  >
+    <NoorLogoMark size={30 * scaleFactor} />
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 1,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 14 * scaleFactor,
+          fontWeight: 700,
+          letterSpacing: 2,
+          color: "#34d399",
+          fontFamily: "sans-serif",
+          textShadow: "0 2px 8px rgba(0,0,0,0.6)",
+        }}
+      >
+        NOORCUTS
+      </span>
+      <span
+        style={{
+          fontSize: 8 * scaleFactor,
+          fontWeight: 500,
+          letterSpacing: 3,
+          color: "rgba(255,255,255,0.45)",
+          fontFamily: "sans-serif",
+          textTransform: "uppercase",
+        }}
+      >
+        Studio
+      </span>
+    </div>
+  </div>
+);
+
 export const ShortVideo: React.FC<VideoCompositionProps> = ({
   ayahs,
   timestamps,
+  wordTimings = [],
   audioUrls,
   backgroundColor,
   backgroundImage,
@@ -437,7 +539,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
           <Divider width={200 * scaleFactor} opacity={0.5} color={accentColor} />
         </div>
 
-        {/* Arabic text */}
+        {/* Arabic text — word-by-word with highlight */}
         <div
           style={{
             color: effectiveArabicColor,
@@ -447,14 +549,73 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
             lineHeight: 2.2,
             direction: "rtl",
             maxWidth: isHorizontal ? 1400 : 900,
-            textShadow: videoTextShadow || (light ? "none" : `0 0 40px ${glowColor}`),
             marginBottom: 30 * scaleFactor,
           }}
         >
-          {activeAyah.arabic}{" "}
-          <span style={{ color: accentColor, textShadow: videoTextShadow }}>
-            ﴿{toArabicNumeral(activeAyah.ayah)}﴾
-          </span>
+          {(() => {
+            const arabicWords = activeAyah.arabic.split(/\s+/);
+            const ayahWt = activeIndex >= 0 ? wordTimings[activeIndex] : null;
+            const hasTimings = ayahWt && ayahWt.words.length > 0;
+
+            return (
+              <>
+                {arabicWords.map((word, i) => {
+                  let wordColor = effectiveArabicColor;
+                  let wordGlow = videoTextShadow || (light ? "none" : `0 0 40px ${glowColor}`);
+                  let wordScale = 1;
+
+                  if (hasTimings) {
+                    // Find this word's timing
+                    const seg = ayahWt.words.find(([wIdx]) => wIdx === i);
+
+                    if (seg) {
+                      const [, , wStart, wEnd] = seg;
+                      const fadeMs = 150; // smooth fade duration
+
+                      if (currentTimeMs >= wStart && currentTimeMs < wEnd) {
+                        // Active word — compute fade-in progress
+                        const elapsed = currentTimeMs - wStart;
+                        const t = Math.min(1, elapsed / fadeMs);
+                        // Interpolate color from base to accent
+                        wordColor = lerpColor(effectiveArabicColor, accentColor, t);
+                        wordGlow = `0 0 ${20 * t}px ${accentColor}${Math.round(96 * t).toString(16).padStart(2, "0")}`;
+                        wordScale = 1 + 0.05 * t;
+                      } else if (currentTimeMs >= wEnd) {
+                        // Already spoken — fade back
+                        const elapsed = currentTimeMs - wEnd;
+                        const t = Math.max(0, 1 - elapsed / (fadeMs * 2));
+                        if (t > 0) {
+                          wordColor = lerpColor(effectiveArabicColor, accentColor, t * 0.5);
+                          wordGlow = `0 0 ${10 * t}px ${accentColor}${Math.round(48 * t).toString(16).padStart(2, "0")}`;
+                        } else {
+                          wordGlow = videoTextShadow || (light ? "none" : `0 0 40px ${glowColor}`);
+                        }
+                      }
+                    }
+                  }
+
+                  return (
+                    <React.Fragment key={i}>
+                      <span
+                        style={{
+                          color: wordColor,
+                          textShadow: wordGlow,
+                          display: "inline-block",
+                          transform: wordScale !== 1 ? `scale(${wordScale})` : undefined,
+                        }}
+                      >
+                        {word}
+                      </span>
+                      {i < arabicWords.length - 1 ? " " : ""}
+                    </React.Fragment>
+                  );
+                })}{" "}
+                <span style={{ color: accentColor, textShadow: videoTextShadow }}>
+                  ﴿{toArabicNumeral(activeAyah.ayah)}﴾
+                </span>
+              </>
+            );
+          })()}
         </div>
 
         <div style={{ height: 40 * scaleFactor }} />
@@ -506,6 +667,51 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
           {activeAyah.surahName}
         </div>
       </div>}
+
+      {/* Watermark — intro (top, first 2s) and outro (bottom, last 2s) */}
+      {(() => {
+        const introMs = 5000;
+        const outroMs = 2000;
+        const fadeDuration = 500; // ms for fade in/out
+        const totalMs = (durationInFrames / fps) * 1000;
+
+        // Intro watermark (top) — visible 0 to introMs with fade in/out
+        let introOpacity = 0;
+        if (currentTimeMs < introMs) {
+          if (currentTimeMs < fadeDuration) {
+            introOpacity = currentTimeMs / fadeDuration;
+          } else if (currentTimeMs > introMs - fadeDuration) {
+            introOpacity = (introMs - currentTimeMs) / fadeDuration;
+          } else {
+            introOpacity = 1;
+          }
+        }
+
+        // Outro watermark (bottom) — visible last outroMs
+        let outroOpacity = 0;
+        const outroStart = totalMs - outroMs;
+        if (currentTimeMs > outroStart) {
+          const outroElapsed = currentTimeMs - outroStart;
+          if (outroElapsed < fadeDuration) {
+            outroOpacity = outroElapsed / fadeDuration;
+          } else if (outroElapsed > outroMs - fadeDuration) {
+            outroOpacity = (outroMs - outroElapsed) / fadeDuration;
+          } else {
+            outroOpacity = 1;
+          }
+        }
+
+        return (
+          <>
+            {introOpacity > 0 && (
+              <Watermark position="top-left" opacity={introOpacity} scaleFactor={scaleFactor} />
+            )}
+            {outroOpacity > 0 && (
+              <Watermark position="bottom-right" opacity={outroOpacity} scaleFactor={scaleFactor} />
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 };

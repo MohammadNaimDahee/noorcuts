@@ -18,6 +18,7 @@ const defaultProps: VideoCompositionProps = {
     },
   ],
   timestamps: [{ ayah: 1, startMs: 0, endMs: 5000 }],
+  wordTimings: [{ ayah: 1, words: [[0, 1, 0, 1000], [1, 2, 1000, 2000], [2, 3, 2000, 3000], [3, 4, 3000, 5000]] }],
   audioUrls: [],
   backgroundColor: "#000000",
   backgroundImage: null,

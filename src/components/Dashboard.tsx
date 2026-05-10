@@ -1,19 +1,28 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import type { SurahInfo, Ayah, Template, RenderJob, VideoFormat, BackgroundVideo, ArabicFontId } from "@/types";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { useRouter } from "next/navigation";
+import type { SurahInfo, Ayah, Template, RenderJob, VideoFormat, BackgroundVideo, ArabicFontId, Project } from "@/types";
 import { VIDEO_FORMATS, ARABIC_FONTS } from "@/types";
 import { NoorLogo } from "./NoorLogo";
 import { SearchSelect } from "./SearchSelect";
 import { UserButton } from "@clerk/nextjs";
 
+const PreviewPlayer = lazy(() => import("./PreviewPlayer").then((m) => ({ default: m.PreviewPlayer })));
 type LeftTab = "source" | "style" | "background";
 
-export function Dashboard() {
+interface DashboardProps {
+  projectId: number;
+}
+
+export function Dashboard({ projectId }: DashboardProps) {
+  const router = useRouter();
   const [surahs, setSurahs] = useState<SurahInfo[]>([]);
   const [reciters, setReciters] = useState<Array<{ id: string; name: string }>>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [renderHistory, setRenderHistory] = useState<RenderJob[]>([]);
+  const [project, setProject] = useState<Project | null>(null);
+  const [projectLoading, setProjectLoading] = useState(true);
 
   // Form state
   const [selectedSurah, setSelectedSurah] = useState<number>(1);
@@ -41,31 +50,56 @@ export function Dashboard() {
   const [success, setSuccess] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [playUrl, setPlayUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
 
-  // Load initial data
+  // Load initial data + project
   useEffect(() => {
     Promise.all([
       fetch("/api/quran").then((r) => r.json()),
       fetch("/api/reciters").then((r) => r.json()),
       fetch("/api/templates").then((r) => r.json()),
-      fetch("/api/render").then((r) => r.json()),
-    ]).then(([surahData, reciterData, templateData, historyData]) => {
+      fetch(`/api/render?projectId=${projectId}`).then((r) => r.json()),
+      fetch("/api/projects").then((r) => r.json()),
+    ]).then(([surahData, reciterData, templateData, historyData, projectData]) => {
       setSurahs(surahData);
       setReciters(reciterData);
       setTemplates(templateData);
-      setRenderHistory(historyData);
-      if (reciterData.length > 0) setSelectedReciter(reciterData[0].id);
-      if (templateData.length > 0) setSelectedTemplate(templateData[0].id);
+      setRenderHistory(Array.isArray(historyData) ? historyData : []);
+
+      // Find the project
+      const allProjects = Array.isArray(projectData) ? projectData : [];
+      const found = allProjects.find((p: Project) => p.id === projectId);
+      if (!found) {
+        // Project not found, redirect to home
+        router.push("/");
+        return;
+      }
+      setProject(found);
+
+      // Load project settings into form
+      if (found.surah) setSelectedSurah(found.surah);
+      if (found.ayahStart) setAyahStart(found.ayahStart);
+      if (found.ayahEnd) setAyahEnd(found.ayahEnd);
+      if (found.reciterId) setSelectedReciter(found.reciterId);
+      else if (reciterData.length > 0) setSelectedReciter(reciterData[0].id);
+      if (found.templateId) setSelectedTemplate(found.templateId);
+      else if (templateData.length > 0) setSelectedTemplate(templateData[0].id);
+      if (found.format) setSelectedFormat(found.format as VideoFormat);
+      if (found.arabicFont) setSelectedFont(found.arabicFont as ArabicFontId);
+
+      setProjectLoading(false);
     });
-  }, []);
+  }, [projectId, router]);
 
   useEffect(() => {
+    if (projectLoading) return;
     const surah = surahs.find((s) => s.id === selectedSurah);
-    if (surah) {
+    if (surah && !project?.surah) {
       setAyahStart(1);
       setAyahEnd(Math.min(7, surah.totalVerses));
     }
-  }, [selectedSurah, surahs]);
+  }, [selectedSurah, surahs, projectLoading, project?.surah]);
 
   const loadPreview = useCallback(async () => {
     const res = await fetch(
@@ -102,6 +136,31 @@ export function Dashboard() {
     });
   };
 
+  const handleSaveProject = async () => {
+    if (!project) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: project.id,
+          surah: selectedSurah,
+          ayahStart,
+          ayahEnd,
+          reciterId: selectedReciter,
+          templateId: selectedTemplate,
+          format: selectedFormat,
+          arabicFont: selectedFont,
+        }),
+      });
+      const updated = await res.json();
+      setProject(updated);
+    } catch { /* ignore */ } finally {
+      setSaving(false);
+    }
+  };
+
   const handleRender = async () => {
     setRendering(true);
     setRenderProgress(0);
@@ -110,6 +169,9 @@ export function Dashboard() {
     setSuccess(null);
     setDownloadUrl(null);
     setPlayUrl(null);
+
+    // Auto-save project settings before rendering
+    await handleSaveProject();
 
     try {
       const res = await fetch("/api/render", {
@@ -124,6 +186,7 @@ export function Dashboard() {
           format: selectedFormat,
           backgroundVideos: selectedBgVideos,
           arabicFont: selectedFont,
+          projectId,
         }),
       });
 
@@ -158,7 +221,7 @@ export function Dashboard() {
                 setDownloadUrl(event.downloadUrl);
                 setPlayUrl(event.downloadUrl);
               }
-              const histRes = await fetch("/api/render");
+              const histRes = await fetch(`/api/render?projectId=${projectId}`);
               setRenderHistory(await histRes.json());
             } else if (event.type === "error") {
               throw new Error(event.error);
@@ -178,22 +241,137 @@ export function Dashboard() {
     }
   };
 
+  const reconnectToJob = useCallback(async (jobId: number) => {
+    setRendering(true);
+    setRenderProgress(0);
+    setRenderStage("Reconnecting...");
+    setError(null);
+    setSuccess(null);
+    setDownloadUrl(null);
+    setPlayUrl(null);
+
+    const refreshHistory = async () => {
+      const histRes = await fetch(`/api/render?projectId=${projectId}`);
+      setRenderHistory(await histRes.json());
+    };
+
+    try {
+      // Poll progress endpoint every second
+      const poll = async (): Promise<boolean> => {
+        const res = await fetch(`/api/render/progress?jobId=${jobId}`);
+        const data = await res.json();
+
+        if (data.status === "not_found") {
+          setRendering(false);
+          await refreshHistory();
+          return true;
+        }
+
+        if (data.status === "rendering") {
+          setRenderProgress(data.progress);
+          setRenderStage(data.stage);
+          return false;
+        }
+
+        if (data.status === "completed") {
+          setSuccess(`Render complete! Job #${data.jobId}`);
+          if (data.downloadUrl) {
+            setDownloadUrl(data.downloadUrl);
+            setPlayUrl(data.downloadUrl);
+          }
+          setRendering(false);
+          await refreshHistory();
+          return true;
+        }
+
+        if (data.status === "failed") {
+          setError(data.error || "Render failed");
+          setRendering(false);
+          await refreshHistory();
+          return true;
+        }
+
+        return false;
+      };
+
+      const done = await poll();
+      if (done) return;
+
+      // Keep polling every 1s
+      await new Promise<void>((resolve) => {
+        const interval = setInterval(async () => {
+          try {
+            const isDone = await poll();
+            if (isDone) {
+              clearInterval(interval);
+              resolve();
+            }
+          } catch {
+            clearInterval(interval);
+            resolve();
+          }
+        }, 1000);
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reconnect");
+    } finally {
+      setRendering(false);
+      setRenderProgress(0);
+      setRenderStage("");
+    }
+  }, [projectId]);
+
+  // Auto-reconnect to any rendering jobs on mount
+  useEffect(() => {
+    if (projectLoading) return;
+    const renderingJob = renderHistory.find((j) => j.status === "rendering");
+    if (renderingJob && !rendering) {
+      reconnectToJob(renderingJob.id);
+    }
+    // Only run once after initial load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectLoading]);
+
   const currentSurah = surahs.find((s) => s.id === selectedSurah);
   const activeTemplate = templates.find((t) => t.id === selectedTemplate);
   const activeFont = ARABIC_FONTS.find((f) => f.id === selectedFont);
   const activeReciter = reciters.find((r) => r.id === selectedReciter);
-
-  // Compute preview canvas aspect ratio
   const fmt = VIDEO_FORMATS[selectedFormat];
   const aspectRatio = `${fmt.width}/${fmt.height}`;
 
+  if (projectLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0e0e1e]">
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#1a1a2e] text-zinc-200">
-      {/* ═══════ TOP TOOLBAR ═══════ */}
+      {/* TOP TOOLBAR */}
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-[#2a2a4a] bg-[#16162a] px-4">
-        {/* Left: App name */}
+        {/* Left: Back + project name */}
         <div className="flex items-center gap-3">
-          <NoorLogo size={24} />
+          <button
+            onClick={() => router.push("/")}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-[#2a2a4a] hover:text-zinc-200 transition-colors"
+            title="Back to projects"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            <NoorLogo size={18} variant="mark" />
+          </button>
+          <div className="h-4 w-px bg-[#2a2a4a]" />
+          <span className="text-xs font-medium text-zinc-300">{project?.name}</span>
+          <button
+            onClick={handleSaveProject}
+            disabled={saving}
+            className="rounded px-2 py-0.5 text-[10px] text-emerald-400 hover:bg-emerald-600/10 transition-colors disabled:opacity-40"
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
         </div>
 
         {/* Center: Format selector */}
@@ -220,33 +398,31 @@ export function Dashboard() {
             disabled={rendering || !selectedReciter}
             className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-          {rendering ? (
-            <>
-              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              {renderProgress}%
-            </>
-          ) : (
-            <>
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
-              </svg>
-              Export
-            </>
-          )}
-        </button>
+            {rendering ? (
+              <>
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                {renderProgress}%
+              </>
+            ) : (
+              <>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
+                </svg>
+                Export
+              </>
+            )}
+          </button>
           <UserButton
             appearance={{
-              elements: {
-                avatarBox: "h-7 w-7",
-              },
+              elements: { avatarBox: "h-7 w-7" },
             }}
           />
         </div>
       </div>
 
-      {/* ═══════ MAIN AREA ═══════ */}
+      {/* MAIN AREA */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ─── LEFT SIDEBAR TABS ─── */}
+        {/* LEFT SIDEBAR */}
         <div className="flex shrink-0">
           {/* Icon rail */}
           <div className="flex w-12 flex-col items-center gap-1 border-r border-[#2a2a4a] bg-[#12122a] py-3">
@@ -275,7 +451,7 @@ export function Dashboard() {
 
           {/* Panel content */}
           <div className="w-72 overflow-y-auto border-r border-[#2a2a4a] bg-[#16162a] p-4">
-            {/* ── SOURCE TAB ── */}
+            {/* SOURCE TAB */}
             {leftTab === "source" && (
               <div className="space-y-4">
                 <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Source</h3>
@@ -353,7 +529,7 @@ export function Dashboard() {
               </div>
             )}
 
-            {/* ── STYLE TAB ── */}
+            {/* STYLE TAB */}
             {leftTab === "style" && (
               <div className="space-y-4">
                 <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Template</h3>
@@ -431,7 +607,7 @@ export function Dashboard() {
               </div>
             )}
 
-            {/* ── BACKGROUND TAB ── */}
+            {/* BACKGROUND TAB */}
             {leftTab === "background" && (
               <div className="space-y-4">
                 <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Background Video</h3>
@@ -533,73 +709,124 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* ─── CENTER CANVAS ─── */}
+        {/* CENTER CANVAS */}
         <div className="flex flex-1 flex-col items-center justify-center overflow-hidden bg-[#0e0e1e] p-6">
-          {/* Canvas wrapper */}
-          <div
-            className="relative overflow-hidden rounded-lg shadow-2xl shadow-black/50"
-            style={{
-              aspectRatio,
-              maxHeight: "calc(100vh - 140px)",
-              maxWidth: "100%",
-              width: selectedFormat === "vertical" ? "auto" : "100%",
-              height: selectedFormat === "vertical" ? "100%" : "auto",
-              backgroundColor: activeTemplate?.backgroundColor || "#0a0a14",
-            }}
-          >
-            {/* Template preview content */}
-            <div className="flex h-full w-full flex-col items-center justify-center p-[8%]">
-              {/* Surah header */}
-              <div className="mb-6 text-center">
-                <div className="text-[10px] uppercase tracking-[0.3em]" style={{ color: activeTemplate?.translationColor || "#aaa", opacity: 0.5 }}>
-                  {currentSurah?.nameEn || "Al-Fatiha"}
+          {/* Preview mode toggle */}
+          <div className="mb-3 flex items-center gap-2">
+            <button
+              onClick={() => setPreviewMode(false)}
+              className={`rounded px-3 py-1 text-[10px] font-medium transition-all ${
+                !previewMode
+                  ? "bg-[#2a2a4a] text-zinc-200"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Canvas
+            </button>
+            <button
+              onClick={() => setPreviewMode(true)}
+              disabled={!selectedReciter}
+              className={`rounded px-3 py-1 text-[10px] font-medium transition-all ${
+                previewMode
+                  ? "bg-emerald-600 text-white"
+                  : "text-zinc-500 hover:text-zinc-300"
+              } disabled:opacity-30 disabled:cursor-not-allowed`}
+            >
+              Preview
+            </button>
+          </div>
+
+          {previewMode && selectedReciter ? (
+            <div
+              className="relative overflow-hidden rounded-lg shadow-2xl shadow-black/50"
+              style={{
+                aspectRatio,
+                maxHeight: "calc(100vh - 180px)",
+                maxWidth: "100%",
+                width: selectedFormat === "vertical" ? "auto" : "100%",
+                height: selectedFormat === "vertical" ? "100%" : "auto",
+              }}
+            >
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center bg-[#0a0a14]">
+                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+                  </div>
+                }
+              >
+                <PreviewPlayer
+                  surah={selectedSurah}
+                  ayahStart={ayahStart}
+                  ayahEnd={ayahEnd}
+                  reciterId={selectedReciter}
+                  templateId={selectedTemplate}
+                  format={selectedFormat}
+                  arabicFont={selectedFont}
+                />
+              </Suspense>
+            </div>
+          ) : (
+            <div
+              className="relative overflow-hidden rounded-lg shadow-2xl shadow-black/50"
+              style={{
+                aspectRatio,
+                maxHeight: "calc(100vh - 180px)",
+                maxWidth: "100%",
+                width: selectedFormat === "vertical" ? "auto" : "100%",
+                height: selectedFormat === "vertical" ? "100%" : "auto",
+                backgroundColor: activeTemplate?.backgroundColor || "#0a0a14",
+              }}
+            >
+              <div className="flex h-full w-full flex-col items-center justify-center p-[8%]">
+                <div className="mb-6 text-center">
+                  <div className="text-[10px] uppercase tracking-[0.3em]" style={{ color: activeTemplate?.translationColor || "#aaa", opacity: 0.5 }}>
+                    {currentSurah?.nameEn || "Al-Fatiha"}
+                  </div>
+                </div>
+
+                <div className="w-full space-y-6 overflow-y-auto max-h-[80%] scrollbar-hide">
+                  {preview.length === 0 && (
+                    <p className="text-center text-xs text-zinc-600">No ayahs selected</p>
+                  )}
+                  {preview.map((ayah) => (
+                    <div key={`${ayah.surah}-${ayah.ayah}`} className="space-y-2 text-center">
+                      <p
+                        className="leading-[2.2]"
+                        dir="rtl"
+                        style={{
+                          color: activeTemplate?.arabicColor || "#fff",
+                          fontFamily: `'${activeFont?.family || "Amiri Quran"}', serif`,
+                          fontSize: selectedFormat === "vertical" ? "clamp(14px, 3.5vw, 22px)" : "clamp(16px, 2.5vw, 28px)",
+                        }}
+                      >
+                        {ayah.arabic}
+                      </p>
+                      <div className="mx-auto" style={{ width: 40, height: 1, background: `linear-gradient(90deg, transparent, ${activeTemplate?.arabicColor || "#fff"}30, transparent)` }} />
+                      <p
+                        className="leading-relaxed italic"
+                        style={{
+                          color: activeTemplate?.translationColor || "#ccc",
+                          fontFamily: "'Cormorant Garamond', Georgia, serif",
+                          fontSize: selectedFormat === "vertical" ? "clamp(9px, 1.8vw, 13px)" : "clamp(11px, 1.4vw, 16px)",
+                          opacity: 0.85,
+                        }}
+                      >
+                        {ayah.translation_en}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* Ayah content */}
-              <div className="w-full space-y-6 overflow-y-auto max-h-[80%] scrollbar-hide">
-                {preview.length === 0 && (
-                  <p className="text-center text-xs text-zinc-600">No ayahs selected</p>
-                )}
-                {preview.map((ayah) => (
-                  <div key={`${ayah.surah}-${ayah.ayah}`} className="space-y-2 text-center">
-                    <p
-                      className="leading-[2.2]"
-                      dir="rtl"
-                      style={{
-                        color: activeTemplate?.arabicColor || "#fff",
-                        fontFamily: `'${activeFont?.family || "Amiri Quran"}', serif`,
-                        fontSize: selectedFormat === "vertical" ? "clamp(14px, 3.5vw, 22px)" : "clamp(16px, 2.5vw, 28px)",
-                      }}
-                    >
-                      {ayah.arabic}
-                    </p>
-                    {/* Decorative divider */}
-                    <div className="mx-auto" style={{ width: 40, height: 1, background: `linear-gradient(90deg, transparent, ${activeTemplate?.arabicColor || "#fff"}30, transparent)` }} />
-                    <p
-                      className="leading-relaxed italic"
-                      style={{
-                        color: activeTemplate?.translationColor || "#ccc",
-                        fontFamily: "'Cormorant Garamond', Georgia, serif",
-                        fontSize: selectedFormat === "vertical" ? "clamp(9px, 1.8vw, 13px)" : "clamp(11px, 1.4vw, 16px)",
-                        opacity: 0.85,
-                      }}
-                    >
-                      {ayah.translation_en}
-                    </p>
-                  </div>
-                ))}
+              <div className="absolute bottom-2 right-2 rounded bg-black/40 px-1.5 py-0.5 text-[8px] font-mono text-zinc-500 backdrop-blur-sm">
+                {fmt.width}x{fmt.height}
               </div>
             </div>
+          )}
 
-            {/* Format badge */}
-            <div className="absolute bottom-2 right-2 rounded bg-black/40 px-1.5 py-0.5 text-[8px] font-mono text-zinc-500 backdrop-blur-sm">
-              {fmt.width}x{fmt.height}
-            </div>
-          </div>
-
-          {/* Canvas label */}
           <div className="mt-3 flex items-center gap-3 text-[10px] text-zinc-600">
+            <span className="text-emerald-400 font-medium">{project?.name}</span>
+            <span>·</span>
             <span>{currentSurah?.nameEn} {ayahStart}-{ayahEnd}</span>
             <span>·</span>
             <span>{activeTemplate?.name}</span>
@@ -614,13 +841,12 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* ─── RIGHT PANEL ─── */}
+        {/* RIGHT PANEL */}
         <div className="flex w-64 shrink-0 flex-col border-l border-[#2a2a4a] bg-[#16162a]">
           {/* Output / Player section */}
           <div className="border-b border-[#2a2a4a] p-4">
             <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Output</h3>
 
-            {/* Render status */}
             {rendering && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -639,7 +865,6 @@ export function Dashboard() {
             {!rendering && error && <p className="text-[10px] text-red-400">{error}</p>}
             {!rendering && success && <p className="text-[10px] text-emerald-400">{success}</p>}
 
-            {/* Download/Play */}
             {downloadUrl && !rendering && (
               <div className="mt-2 flex gap-1.5">
                 <a
@@ -658,7 +883,6 @@ export function Dashboard() {
               </div>
             )}
 
-            {/* Video player */}
             {playUrl && (
               <div className="mt-2 overflow-hidden rounded-lg border border-[#2a2a4a]">
                 <video
@@ -681,9 +905,9 @@ export function Dashboard() {
 
           {/* History */}
           <div className="flex-1 overflow-y-auto p-4">
-            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">History</h3>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Render History</h3>
             {renderHistory.length === 0 && (
-              <p className="text-[10px] text-zinc-600">No render history</p>
+              <p className="text-[10px] text-zinc-600">No renders yet for this project</p>
             )}
             <div className="space-y-1">
               {renderHistory.map((job) => (
@@ -721,6 +945,14 @@ export function Dashboard() {
                         </button>
                       </>
                     )}
+                    {job.status === "rendering" && !rendering && (
+                      <button
+                        onClick={() => reconnectToJob(job.id)}
+                        className="text-[9px] text-yellow-400 hover:text-yellow-300"
+                      >
+                        View
+                      </button>
+                    )}
                     <span
                       className={`rounded px-1.5 py-0.5 text-[8px] font-medium ${
                         job.status === "completed"
@@ -728,9 +960,10 @@ export function Dashboard() {
                           : job.status === "failed"
                           ? "bg-red-500/10 text-red-400"
                           : job.status === "rendering"
-                          ? "bg-yellow-500/10 text-yellow-400"
+                          ? "bg-yellow-500/10 text-yellow-400 cursor-pointer"
                           : "bg-[#2a2a4a] text-zinc-400"
                       }`}
+                      onClick={job.status === "rendering" && !rendering ? () => reconnectToJob(job.id) : undefined}
                     >
                       {job.status}
                     </span>
@@ -742,7 +975,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* ═══════ BOTTOM STATUS BAR ═══════ */}
+      {/* BOTTOM STATUS BAR */}
       <div className="flex h-6 shrink-0 items-center justify-between border-t border-[#2a2a4a] bg-[#12122a] px-4 text-[9px] text-zinc-600">
         <div className="flex items-center gap-4">
           <span>{surahs.length} surahs</span>

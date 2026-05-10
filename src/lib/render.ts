@@ -17,8 +17,9 @@ import {
   muxAudio,
   cleanupTempDir,
 } from "@/lib/ffmpeg";
-import type { VideoCompositionProps, VideoFormat, AyahTimestamp, BackgroundVideo, ArabicFontId } from "@/types";
+import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId } from "@/types";
 import { ARABIC_FONTS } from "@/types";
+import { updateRenderProgress } from "@/lib/render-progress";
 
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 const TEMP_DIR = path.join(process.cwd(), "output", ".tmp");
@@ -36,21 +37,28 @@ export async function triggerRender(
   backgroundVideos: BackgroundVideo[] = [],
   arabicFont: ArabicFontId = "amiri-quran",
   userId: string,
+  projectId?: number,
   onProgress?: RenderProgressCallback
 ): Promise<{ jobId: number; outputPath: string }> {
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  const jobId = createRenderJob(surah, ayahStart, ayahEnd, reciterId, templateId, userId);
+  const jobId = createRenderJob(surah, ayahStart, ayahEnd, reciterId, templateId, userId, projectId);
   updateRenderJob(jobId, { status: "rendering" });
+  updateRenderProgress(jobId, { stage: "Starting", progress: 0, status: "rendering", jobId });
+
+  const emitProgress = (stage: string, progress: number) => {
+    updateRenderProgress(jobId, { stage, progress, status: "rendering" });
+    onProgress?.(stage, progress);
+  };
 
   const jobTempDir = path.join(TEMP_DIR, `job-${jobId}`);
   const bgVideoPublicDir = path.join(process.cwd(), "public", "temp-bg", `job-${jobId}`);
 
   try {
     // Gather data
-    onProgress?.("Gathering ayah data", 0);
+    emitProgress("Gathering ayah data", 0);
     const ayahs = getAyahRange(surah, ayahStart, ayahEnd);
     if (ayahs.length === 0) {
       throw new Error(`No ayahs found for surah ${surah}, ayah ${ayahStart}-${ayahEnd}`);
@@ -70,7 +78,7 @@ export async function triggerRender(
 
     if (isSurahLevelReciter(reciterId)) {
       // Surah-level reciter: one audio file, extract the relevant portion
-      onProgress?.("Downloading audio", 5);
+      emitProgress("Downloading audio", 5);
       const surahTimestamps = getSurahLevelTimestamps(reciterId, surah, ayahStart, ayahEnd);
       const firstStart = surahTimestamps[0].startMs;
       const lastEnd = surahTimestamps[surahTimestamps.length - 1].endMs;
@@ -93,7 +101,7 @@ export async function triggerRender(
       totalDurationMs = lastEnd - firstStart;
     } else {
       // Ayah-level reciter: one audio file per ayah, download and concatenate
-      onProgress?.("Downloading audio", 5);
+      emitProgress("Downloading audio", 5);
       const audioUrls = recitations.map((r) => r.audioUrl);
       const { durationsMs } = await downloadAndConcatAudio(audioUrls, concatAudioPath, jobTempDir);
 
@@ -112,11 +120,24 @@ export async function triggerRender(
 
     const totalDurationFrames = Math.ceil((totalDurationMs / 1000) * 30);
 
+    // Build word-level timings (absolute ms relative to full timeline)
+    const wordTimings: AyahWordTimings[] = recitations.map((r, i) => {
+      const ayahStartMs = timestamps[i].startMs;
+      const words: [number, number, number, number][] = r.segments.map((seg) => {
+        const wordIdx = parseInt(String(seg[0]), 10);
+        const wordEnd = parseInt(String(seg[1]), 10);
+        const segStartMs = parseInt(String(seg[2]), 10);
+        const segEndMs = parseInt(String(seg[3]), 10);
+        return [wordIdx, wordEnd, ayahStartMs + segStartMs, ayahStartMs + segEndMs];
+      });
+      return { ayah: r.ayahNumber, words };
+    });
+
     // Download background videos if provided
     // Videos must be in public/ so Remotion can serve them via staticFile()
     const bgVideoStaticPaths: string[] = [];
     if (backgroundVideos.length > 0) {
-      onProgress?.("Downloading background videos", 15);
+      emitProgress("Downloading background videos", 15);
       fs.mkdirSync(bgVideoPublicDir, { recursive: true });
       for (let i = 0; i < backgroundVideos.length; i++) {
         const bgVideo = backgroundVideos[i];
@@ -132,6 +153,7 @@ export async function triggerRender(
     const inputProps: VideoCompositionProps = {
       ayahs,
       timestamps,
+      wordTimings,
       audioUrls: [],
       backgroundColor: template.backgroundColor,
       backgroundImage: template.backgroundImage,
@@ -145,7 +167,7 @@ export async function triggerRender(
     };
 
     // Bundle and render video (without audio)
-    onProgress?.("Bundling composition", 25);
+    emitProgress("Bundling composition", 25);
     const bundled = await bundle({
       entryPoint: REMOTION_ENTRY,
       publicDir: path.join(process.cwd(), "public"),
@@ -170,7 +192,7 @@ export async function triggerRender(
 
     composition.durationInFrames = totalDurationFrames;
 
-    onProgress?.("Rendering video", 35);
+    emitProgress("Rendering video", 35);
     const silentVideoPath = path.join(jobTempDir, "video-silent.mp4");
     await renderMedia({
       composition,
@@ -181,28 +203,34 @@ export async function triggerRender(
       onProgress: ({ progress }) => {
         // Rendering is 35-90% of total progress
         const pct = 35 + Math.round(progress * 55);
-        onProgress?.("Rendering video", pct);
+        emitProgress("Rendering video", pct);
       },
     });
 
     // Mux audio onto the silent video
-    onProgress?.("Muxing audio", 92);
+    emitProgress("Muxing audio", 92);
+    const userOutputDir = path.join(OUTPUT_DIR, userId);
+    if (!fs.existsSync(userOutputDir)) {
+      fs.mkdirSync(userOutputDir, { recursive: true });
+    }
     const finalOutputPath = path.join(
-      OUTPUT_DIR,
-      `noorcuts-${surah}-${ayahStart}-${ayahEnd}.mp4`
+      userOutputDir,
+      `noorcuts-${surah}-${ayahStart}-${ayahEnd}-${jobId}.mp4`
     );
     await muxAudio(silentVideoPath, concatAudioPath, finalOutputPath);
 
     cleanupTempDir(jobTempDir);
     cleanupTempDir(bgVideoPublicDir);
 
-    onProgress?.("Complete", 100);
+    emitProgress("Complete", 100);
+    updateRenderProgress(jobId, { status: "completed", progress: 100, stage: "Complete" });
     updateRenderJob(jobId, { status: "completed", outputPath: finalOutputPath });
     return { jobId, outputPath: finalOutputPath };
   } catch (err) {
     cleanupTempDir(jobTempDir);
     cleanupTempDir(bgVideoPublicDir);
     const message = err instanceof Error ? err.message : "Unknown render error";
+    updateRenderProgress(jobId, { status: "failed", error: message, stage: "Failed" });
     updateRenderJob(jobId, { status: "failed", errorMessage: message });
     throw err;
   }
