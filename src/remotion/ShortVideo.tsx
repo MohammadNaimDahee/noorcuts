@@ -274,6 +274,8 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   audioWaveform = false,
   transitionEffect = "none",
   calligraphyEntrance = false,
+  surahIntro = false,
+  surahMeta = null,
 }) => {
   const { width, height } = useVideoConfig();
 
@@ -516,6 +518,219 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
           borderRadius: 12,
         }}
       />
+
+      {/* Surah Intro Card */}
+      {surahIntro && surahMeta && (() => {
+        const introDuration = surahMeta.introDurationMs;
+        const fadeInMs = 600;
+        const holdMs = introDuration - 1200;
+        const fadeOutMs = 600;
+
+        if (currentTimeMs >= introDuration) return null;
+
+        let introOpacity = 1;
+        if (currentTimeMs < fadeInMs) {
+          introOpacity = currentTimeMs / fadeInMs;
+        } else if (currentTimeMs > fadeInMs + holdMs) {
+          introOpacity = Math.max(0, (introDuration - currentTimeMs) / fadeOutMs);
+        }
+
+        // Subtle scale animation: 1.05 -> 1.0
+        const introScale = 1.05 - 0.05 * Math.min(1, currentTimeMs / introDuration);
+
+        // Ornamental line grow animation
+        const lineProgress = Math.min(1, currentTimeMs / 1200);
+        const lineWidth = 200 * scaleFactor * lineProgress;
+
+        // Staggered text reveals
+        const titleDelay = 200;
+        const subtitleDelay = 600;
+        const metaDelay = 1000;
+
+        const titleOpacity = Math.min(1, Math.max(0, (currentTimeMs - titleDelay) / 400));
+        const titleY = 20 * (1 - titleOpacity);
+        const subtitleOpacity = Math.min(1, Math.max(0, (currentTimeMs - subtitleDelay) / 400));
+        const subtitleY = 15 * (1 - subtitleOpacity);
+        const metaOpacity = Math.min(1, Math.max(0, (currentTimeMs - metaDelay) / 400));
+
+        const revelationLabel = surahMeta.revelationType === "meccan" ? "Meccan" : "Medinan";
+        const revelationArabic = surahMeta.revelationType === "meccan" ? "مكية" : "مدنية";
+
+        return (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 5,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: introOpacity,
+              transform: `scale(${introScale})`,
+            }}
+          >
+            {/* Bismillah / opening */}
+            <div
+              style={{
+                color: accentColor,
+                fontSize: 22 * scaleFactor,
+                fontFamily: `'${arabicFontFamily}', 'Amiri', serif`,
+                opacity: metaOpacity,
+                marginBottom: 40 * scaleFactor,
+                textShadow: videoTextShadow || `0 2px 12px ${accentColor}20`,
+              }}
+            >
+              بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ
+            </div>
+
+            {/* Ornamental line top */}
+            <Divider width={lineWidth} opacity={0.6 * lineProgress} color={accentColor} />
+
+            <div style={{ height: 30 * scaleFactor }} />
+
+            {/* Surah name Arabic — large */}
+            <div
+              style={{
+                color: effectiveArabicColor,
+                fontSize: 72 * scaleFactor,
+                fontFamily: `'${arabicFontFamily}', 'Amiri', serif`,
+                opacity: titleOpacity,
+                transform: `translateY(${titleY}px)`,
+                textShadow: videoTextShadow || `0 4px 20px ${accentColor}15`,
+                lineHeight: 1.4,
+              }}
+            >
+              {surahMeta.name}
+            </div>
+
+            <div style={{ height: 12 * scaleFactor }} />
+
+            {/* Surah name English */}
+            <div
+              style={{
+                color: accentColor,
+                fontSize: 28 * scaleFactor,
+                fontFamily: "'Cormorant Garamond', Georgia, serif",
+                fontWeight: 300,
+                letterSpacing: 6,
+                textTransform: "uppercase",
+                opacity: subtitleOpacity,
+                transform: `translateY(${subtitleY}px)`,
+                textShadow: videoTextShadow,
+              }}
+            >
+              {surahMeta.nameEn}
+            </div>
+
+            <div style={{ height: 30 * scaleFactor }} />
+
+            {/* Ornamental line bottom */}
+            <Divider width={lineWidth * 0.7} opacity={0.4 * lineProgress} color={accentColor} />
+
+            <div style={{ height: 30 * scaleFactor }} />
+
+            {/* Metadata row */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 24 * scaleFactor,
+                opacity: metaOpacity,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <span
+                  style={{
+                    color: effectiveTranslationColor,
+                    fontSize: 10 * scaleFactor,
+                    fontFamily: "'Cormorant Garamond', Georgia, serif",
+                    letterSpacing: 3,
+                    textTransform: "uppercase",
+                    opacity: 0.6,
+                    textShadow: videoTextShadow,
+                  }}
+                >
+                  Verses
+                </span>
+                <span
+                  style={{
+                    color: effectiveArabicColor,
+                    fontSize: 20 * scaleFactor,
+                    fontFamily: "'Cormorant Garamond', Georgia, serif",
+                    fontWeight: 500,
+                    textShadow: videoTextShadow,
+                  }}
+                >
+                  {surahMeta.totalVerses}
+                </span>
+              </div>
+
+              <div
+                style={{
+                  width: 1,
+                  height: 30 * scaleFactor,
+                  backgroundColor: accentColor,
+                  opacity: 0.3,
+                }}
+              />
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <span
+                  style={{
+                    color: effectiveTranslationColor,
+                    fontSize: 10 * scaleFactor,
+                    fontFamily: "'Cormorant Garamond', Georgia, serif",
+                    letterSpacing: 3,
+                    textTransform: "uppercase",
+                    opacity: 0.6,
+                    textShadow: videoTextShadow,
+                  }}
+                >
+                  Revelation
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    style={{
+                      color: effectiveArabicColor,
+                      fontSize: 18 * scaleFactor,
+                      fontFamily: "'Cormorant Garamond', Georgia, serif",
+                      fontWeight: 500,
+                      textShadow: videoTextShadow,
+                    }}
+                  >
+                    {revelationLabel}
+                  </span>
+                  <span
+                    style={{
+                      color: accentColor,
+                      fontSize: 16 * scaleFactor,
+                      fontFamily: `'${arabicFontFamily}', 'Amiri', serif`,
+                      opacity: 0.7,
+                    }}
+                  >
+                    {revelationArabic}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Main content */}
       {showText && <div

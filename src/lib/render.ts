@@ -8,6 +8,8 @@ import {
   isSurahLevelReciter,
   getSurahLevelTimestamps,
   getSurahAudioUrl,
+  getSurahList,
+  getSurahRevelationType,
 } from "@/lib/quran";
 import { getTemplate, createRenderJob, updateRenderJob } from "@/lib/db";
 import {
@@ -17,7 +19,7 @@ import {
   muxAudio,
   cleanupTempDir,
 } from "@/lib/ffmpeg";
-import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId, TransitionEffect } from "@/types";
+import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId, TransitionEffect, SurahMeta } from "@/types";
 import { ARABIC_FONTS } from "@/types";
 import { updateRenderProgress } from "@/lib/render-progress";
 
@@ -40,6 +42,7 @@ export async function triggerRender(
   audioWaveform: boolean = false,
   transitionEffect: TransitionEffect = "none",
   calligraphyEntrance: boolean = false,
+  surahIntro: boolean = false,
   userId: string,
   projectId?: number,
   onProgress?: RenderProgressCallback
@@ -122,6 +125,28 @@ export async function triggerRender(
       totalDurationMs = cumulativeMs;
     }
 
+    // Surah intro: shift all timestamps forward and add intro duration
+    const INTRO_DURATION_MS = 3500;
+    let surahMeta: SurahMeta | null = null;
+    if (surahIntro) {
+      const surahList = getSurahList();
+      const surahInfo = surahList.find((s) => s.id === surah);
+      surahMeta = {
+        name: ayahs[0].surahName,
+        nameEn: ayahs[0].surahNameEn,
+        totalVerses: surahInfo?.totalVerses || ayahEnd,
+        revelationType: getSurahRevelationType(surah),
+        introDurationMs: INTRO_DURATION_MS,
+      };
+      // Shift timestamps and word timings forward by intro duration
+      timestamps = timestamps.map((ts) => ({
+        ...ts,
+        startMs: ts.startMs + INTRO_DURATION_MS,
+        endMs: ts.endMs + INTRO_DURATION_MS,
+      }));
+      totalDurationMs += INTRO_DURATION_MS;
+    }
+
     const totalDurationFrames = Math.ceil((totalDurationMs / 1000) * 30);
 
     // Build word-level timings (absolute ms relative to full timeline)
@@ -171,6 +196,8 @@ export async function triggerRender(
       audioWaveform,
       transitionEffect,
       calligraphyEntrance,
+      surahIntro,
+      surahMeta,
       format,
     };
 

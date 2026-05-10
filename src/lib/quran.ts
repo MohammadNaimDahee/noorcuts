@@ -1,6 +1,30 @@
 import fs from "fs";
 import path from "path";
-import type { Ayah, SurahInfo, AyahRecitation, AyahTimestamp, Reciter, WordSegment } from "@/types";
+import type { Ayah, SurahInfo, AyahRecitation, AyahTimestamp, Reciter, WordSegment, RevelationType } from "@/types";
+
+/**
+ * Surah revelation type lookup.
+ * M = Meccan, D = Medinan (Madani).
+ * Source: Standard scholarly classification.
+ */
+const SURAH_REVELATION: Record<number, RevelationType> = {
+  1:"meccan",2:"medinan",3:"medinan",4:"medinan",5:"medinan",6:"meccan",7:"meccan",8:"medinan",9:"medinan",10:"meccan",
+  11:"meccan",12:"meccan",13:"medinan",14:"meccan",15:"meccan",16:"meccan",17:"meccan",18:"meccan",19:"meccan",20:"meccan",
+  21:"meccan",22:"medinan",23:"meccan",24:"medinan",25:"meccan",26:"meccan",27:"meccan",28:"meccan",29:"meccan",30:"meccan",
+  31:"meccan",32:"meccan",33:"medinan",34:"meccan",35:"meccan",36:"meccan",37:"meccan",38:"meccan",39:"meccan",40:"meccan",
+  41:"meccan",42:"meccan",43:"meccan",44:"meccan",45:"meccan",46:"meccan",47:"medinan",48:"medinan",49:"medinan",50:"meccan",
+  51:"meccan",52:"meccan",53:"meccan",54:"meccan",55:"medinan",56:"meccan",57:"medinan",58:"medinan",59:"medinan",60:"medinan",
+  61:"medinan",62:"medinan",63:"medinan",64:"medinan",65:"medinan",66:"medinan",67:"meccan",68:"meccan",69:"meccan",70:"meccan",
+  71:"meccan",72:"meccan",73:"meccan",74:"meccan",75:"meccan",76:"medinan",77:"meccan",78:"meccan",79:"meccan",80:"meccan",
+  81:"meccan",82:"meccan",83:"meccan",84:"meccan",85:"meccan",86:"meccan",87:"meccan",88:"meccan",89:"meccan",90:"meccan",
+  91:"meccan",92:"meccan",93:"meccan",94:"meccan",95:"meccan",96:"meccan",97:"meccan",98:"medinan",99:"medinan",100:"meccan",
+  101:"meccan",102:"meccan",103:"meccan",104:"meccan",105:"meccan",106:"meccan",107:"meccan",108:"meccan",109:"meccan",110:"medinan",
+  111:"meccan",112:"meccan",113:"meccan",114:"meccan",
+};
+
+export function getSurahRevelationType(surah: number): RevelationType {
+  return SURAH_REVELATION[surah] || "meccan";
+}
 
 // Lazy-load better-sqlite3 to avoid crashing on Vercel (no native modules)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

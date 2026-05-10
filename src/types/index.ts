@@ -116,6 +116,7 @@ export interface RenderRequest {
   audioWaveform?: boolean;
   transitionEffect?: TransitionEffect;
   calligraphyEntrance?: boolean;
+  surahIntro?: boolean;
   projectId?: number;
 }
 
@@ -135,6 +136,7 @@ export interface Project {
   audioWaveform: boolean;
   transitionEffect: TransitionEffect;
   calligraphyEntrance: boolean;
+  surahIntro: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -163,7 +165,19 @@ export interface VideoCompositionProps {
   audioWaveform: boolean; // enable audio waveform visualizer
   transitionEffect: TransitionEffect; // transition between ayahs
   calligraphyEntrance: boolean; // animated calligraphy entrance
+  surahIntro: boolean; // cinematic surah intro card
+  surahMeta: SurahMeta | null; // metadata for intro card
   format: VideoFormat;
+}
+
+export type RevelationType = "meccan" | "medinan";
+
+export interface SurahMeta {
+  name: string; // Arabic surah name
+  nameEn: string; // English surah name
+  totalVerses: number;
+  revelationType: RevelationType;
+  introDurationMs: number; // how long the intro card lasts
 }
 
 export interface SurahInfo {

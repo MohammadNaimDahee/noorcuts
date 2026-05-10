@@ -18,6 +18,7 @@ interface PreviewPlayerProps {
   audioWaveform?: boolean;
   transitionEffect?: TransitionEffect;
   calligraphyEntrance?: boolean;
+  surahIntro?: boolean;
   backgroundVideos?: string[];
 }
 
@@ -38,6 +39,7 @@ export function PreviewPlayer({
   audioWaveform = false,
   transitionEffect = "none",
   calligraphyEntrance = false,
+  surahIntro = false,
   backgroundVideos = [],
 }: PreviewPlayerProps) {
   const [data, setData] = useState<PreviewData | null>(null);
@@ -47,7 +49,7 @@ export function PreviewPlayer({
   bgVideosRef.current = backgroundVideos;
 
   // Stable key for when to re-fetch (only primitive deps)
-  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}`;
+  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}`;
 
   const loadPreview = useCallback(async () => {
     if (!surah || !ayahStart || !ayahEnd || !reciterId) return;
@@ -68,6 +70,7 @@ export function PreviewPlayer({
         audioWaveform: String(audioWaveform),
         transitionEffect,
         calligraphyEntrance: String(calligraphyEntrance),
+        surahIntro: String(surahIntro),
       });
 
       const res = await fetch(`/api/preview?${params}`);
@@ -96,6 +99,8 @@ export function PreviewPlayer({
         audioWaveform: d.audioWaveform ?? audioWaveform,
         transitionEffect: d.transitionEffect ?? transitionEffect,
         calligraphyEntrance: d.calligraphyEntrance ?? calligraphyEntrance,
+        surahIntro: d.surahIntro ?? surahIntro,
+        surahMeta: d.surahMeta ?? null,
       };
 
       setData({

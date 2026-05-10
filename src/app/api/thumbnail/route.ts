@@ -146,6 +146,8 @@ export async function POST(request: Request): Promise<Response> {
       audioWaveform: false, // no waveform on thumbnail
       transitionEffect: transitionEffect as TransitionEffect,
       calligraphyEntrance: false, // show fully revealed text
+      surahIntro: false, // no intro on thumbnail
+      surahMeta: null,
       format: format as VideoFormat,
     };
 

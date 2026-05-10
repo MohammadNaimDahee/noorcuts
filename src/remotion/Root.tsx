@@ -33,6 +33,8 @@ const defaultProps: VideoCompositionProps = {
   audioWaveform: false,
   transitionEffect: "none",
   calligraphyEntrance: false,
+  surahIntro: false,
+  surahMeta: null,
 };
 
 export const RemotionRoot: React.FC = () => {

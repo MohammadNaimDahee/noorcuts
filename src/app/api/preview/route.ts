@@ -5,10 +5,12 @@ import {
   getRecitations,
   isSurahLevelReciter,
   getSurahLevelTimestamps,
+  getSurahList,
+  getSurahRevelationType,
 } from "@/lib/quran";
 import { getTemplate } from "@/lib/db";
 import { ARABIC_FONTS } from "@/types";
-import type { AyahTimestamp, AyahWordTimings, VideoFormat, ArabicFontId, TransitionEffect } from "@/types";
+import type { AyahTimestamp, AyahWordTimings, VideoFormat, ArabicFontId, TransitionEffect, SurahMeta } from "@/types";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const { userId } = await auth();
@@ -28,6 +30,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const audioWaveform = searchParams.get("audioWaveform") === "true";
   const transitionEffect = (searchParams.get("transitionEffect") || "none") as TransitionEffect;
   const calligraphyEntrance = searchParams.get("calligraphyEntrance") === "true";
+  const surahIntro = searchParams.get("surahIntro") === "true";
 
   if (!surah || !ayahStart || !ayahEnd || !reciterId) {
     return NextResponse.json(
@@ -88,6 +91,27 @@ export async function GET(request: Request): Promise<NextResponse> {
       audioUrls = recitations.map((r) => r.audioUrl);
     }
 
+    // Surah intro: shift timestamps forward
+    const INTRO_DURATION_MS = 3500;
+    let surahMeta: SurahMeta | null = null;
+    if (surahIntro) {
+      const surahList = getSurahList();
+      const surahInfo = surahList.find((s) => s.id === surah);
+      surahMeta = {
+        name: ayahs[0].surahName,
+        nameEn: ayahs[0].surahNameEn,
+        totalVerses: surahInfo?.totalVerses || ayahEnd,
+        revelationType: getSurahRevelationType(surah),
+        introDurationMs: INTRO_DURATION_MS,
+      };
+      timestamps = timestamps.map((ts) => ({
+        ...ts,
+        startMs: ts.startMs + INTRO_DURATION_MS,
+        endMs: ts.endMs + INTRO_DURATION_MS,
+      }));
+      totalDurationMs += INTRO_DURATION_MS;
+    }
+
     // Build word timings
     const wordTimings: AyahWordTimings[] = recitations.map((r, i) => {
       const ayahStartMs = timestamps[i].startMs;
@@ -123,6 +147,8 @@ export async function GET(request: Request): Promise<NextResponse> {
       audioWaveform,
       transitionEffect,
       calligraphyEntrance,
+      surahIntro,
+      surahMeta,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Preview data error";

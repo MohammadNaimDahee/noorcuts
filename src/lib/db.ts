@@ -71,6 +71,7 @@ function runMigrations(database: any): void {
       audio_waveform INTEGER DEFAULT 0,
       transition_effect TEXT DEFAULT 'none',
       calligraphy_entrance INTEGER DEFAULT 0,
+      surah_intro INTEGER DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -101,6 +102,9 @@ function runMigrations(database: any): void {
   }
   if (!pCols.some((c) => c.name === "calligraphy_entrance")) {
     database.exec("ALTER TABLE projects ADD COLUMN calligraphy_entrance INTEGER DEFAULT 0");
+  }
+  if (!pCols.some((c) => c.name === "surah_intro")) {
+    database.exec("ALTER TABLE projects ADD COLUMN surah_intro INTEGER DEFAULT 0");
   }
 
   // Mark any stale "rendering" jobs as failed (server restarted while they were running)
@@ -293,6 +297,7 @@ export function updateProject(
   if (updates.audioWaveform !== undefined) { sets.push("audio_waveform = ?"); values.push(updates.audioWaveform ? 1 : 0); }
   if (updates.transitionEffect !== undefined) { sets.push("transition_effect = ?"); values.push(updates.transitionEffect); }
   if (updates.calligraphyEntrance !== undefined) { sets.push("calligraphy_entrance = ?"); values.push(updates.calligraphyEntrance ? 1 : 0); }
+  if (updates.surahIntro !== undefined) { sets.push("surah_intro = ?"); values.push(updates.surahIntro ? 1 : 0); }
 
   values.push(id, userId);
   getDb()
@@ -323,6 +328,7 @@ function rowToProject(row: Record<string, unknown>): Project {
     audioWaveform: !!(row.audio_waveform as number),
     transitionEffect: (row.transition_effect as TransitionEffect) || "none",
     calligraphyEntrance: !!(row.calligraphy_entrance as number),
+    surahIntro: !!(row.surah_intro as number),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

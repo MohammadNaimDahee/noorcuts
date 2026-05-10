@@ -36,6 +36,7 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [audioWaveform, setAudioWaveform] = useState(false);
   const [transitionEffect, setTransitionEffect] = useState<TransitionEffect>("none");
   const [calligraphyEntrance, setCalligraphyEntrance] = useState(false);
+  const [surahIntro, setSurahIntro] = useState(false);
 
   // Background video state
   const [bgVideoQuery, setBgVideoQuery] = useState("");
@@ -102,6 +103,7 @@ export function Dashboard({ projectId }: DashboardProps) {
       if (found.audioWaveform !== undefined) setAudioWaveform(found.audioWaveform);
       if (found.transitionEffect) setTransitionEffect(found.transitionEffect);
       if (found.calligraphyEntrance !== undefined) setCalligraphyEntrance(found.calligraphyEntrance);
+      if (found.surahIntro !== undefined) setSurahIntro(found.surahIntro);
 
       setProjectLoading(false);
     });
@@ -216,6 +218,7 @@ export function Dashboard({ projectId }: DashboardProps) {
           audioWaveform,
           transitionEffect,
           calligraphyEntrance,
+          surahIntro,
         }),
       });
       const updated = await res.json();
@@ -254,6 +257,7 @@ export function Dashboard({ projectId }: DashboardProps) {
           audioWaveform,
           transitionEffect,
           calligraphyEntrance,
+          surahIntro,
           projectId,
         }),
       });
@@ -781,6 +785,29 @@ export function Dashboard({ projectId }: DashboardProps) {
                       </button>
                     </label>
 
+                    {/* Surah Intro toggle */}
+                    <label className="flex items-center justify-between cursor-pointer rounded-lg border border-[#2a2a4a] px-3 py-2.5 hover:border-zinc-500 transition-colors">
+                      <div>
+                        <div className="text-[11px] text-zinc-300">Surah Intro</div>
+                        <div className="text-[9px] text-zinc-600">Cinematic intro card with surah info</div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={surahIntro}
+                        onClick={() => setSurahIntro(!surahIntro)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                          surahIntro ? "bg-emerald-600" : "bg-[#2a2a4a]"
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                            surahIntro ? "translate-x-4" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </label>
+
                     {/* Transition Effect selector */}
                     <div className="rounded-lg border border-[#2a2a4a] px-3 py-2.5">
                       <div className="text-[11px] text-zinc-300 mb-1.5">Transition Effect</div>
@@ -970,6 +997,7 @@ export function Dashboard({ projectId }: DashboardProps) {
                   audioWaveform={audioWaveform}
                   transitionEffect={transitionEffect}
                   calligraphyEntrance={calligraphyEntrance}
+                  surahIntro={surahIntro}
                 />
               </Suspense>
             </div>
