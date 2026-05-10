@@ -25,34 +25,36 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider
-      appearance={{
-        baseTheme: dark,
-        variables: {
-          colorPrimary: "#10b981",
-          colorBackground: "#16162a",
-          colorInputBackground: "#0f0f20",
-          colorInputText: "#ffffff",
-          colorText: "#ffffff",
-          colorTextOnPrimaryBackground: "#ffffff",
-          colorTextSecondary: "#a1a1aa",
-          colorDanger: "#ef4444",
-          colorSuccess: "#10b981",
-          colorWarning: "#f59e0b",
-          colorNeutral: "#ffffff",
-          borderRadius: "0.5rem",
-        },
-        layout: {
-          socialButtonsVariant: "blockButton",
-        },
-      }}
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
-      <html
-        lang="en"
-        className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
-      >
-        <body suppressHydrationWarning className="h-full overflow-hidden">{children}</body>
-      </html>
-    </ClerkProvider>
+      <body suppressHydrationWarning className="h-full overflow-hidden">
+        <ClerkProvider
+          appearance={{
+            baseTheme: dark,
+            variables: {
+              colorPrimary: "#10b981",
+              colorBackground: "#16162a",
+              colorInputBackground: "#0f0f20",
+              colorInputText: "#ffffff",
+              colorText: "#ffffff",
+              colorTextOnPrimaryBackground: "#ffffff",
+              colorTextSecondary: "#a1a1aa",
+              colorDanger: "#ef4444",
+              colorSuccess: "#10b981",
+              colorWarning: "#f59e0b",
+              colorNeutral: "#ffffff",
+              borderRadius: "0.5rem",
+            },
+            layout: {
+              socialButtonsVariant: "blockButton",
+            },
+          }}
+        >
+          {children}
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }
