@@ -101,6 +101,8 @@ export const ARABIC_FONTS: ArabicFontConfig[] = [
   { id: "lateef", label: "Lateef", family: "Lateef", file: "Lateef-Regular.ttf", sampleText: "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ" },
 ];
 
+export type TransitionEffect = "none" | "crossfade" | "slide" | "zoom";
+
 export interface RenderRequest {
   surah: number;
   ayahStart: number;
@@ -110,6 +112,10 @@ export interface RenderRequest {
   format: VideoFormat;
   backgroundVideos?: BackgroundVideo[];
   arabicFont?: ArabicFontId;
+  wordHighlight?: boolean;
+  audioWaveform?: boolean;
+  transitionEffect?: TransitionEffect;
+  calligraphyEntrance?: boolean;
   projectId?: number;
 }
 
@@ -125,6 +131,10 @@ export interface Project {
   templateId: number | null;
   format: string;
   arabicFont: string;
+  wordHighlight: boolean;
+  audioWaveform: boolean;
+  transitionEffect: TransitionEffect;
+  calligraphyEntrance: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -149,6 +159,10 @@ export interface VideoCompositionProps {
   arabicColor: string;
   translationColor: string;
   arabicFontFamily: string; // CSS font-family for Arabic text
+  wordHighlight: boolean; // enable word-by-word highlight
+  audioWaveform: boolean; // enable audio waveform visualizer
+  transitionEffect: TransitionEffect; // transition between ayahs
+  calligraphyEntrance: boolean; // animated calligraphy entrance
   format: VideoFormat;
 }
 

@@ -17,7 +17,7 @@ import {
   muxAudio,
   cleanupTempDir,
 } from "@/lib/ffmpeg";
-import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId } from "@/types";
+import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId, TransitionEffect } from "@/types";
 import { ARABIC_FONTS } from "@/types";
 import { updateRenderProgress } from "@/lib/render-progress";
 
@@ -36,6 +36,10 @@ export async function triggerRender(
   format: VideoFormat = "vertical",
   backgroundVideos: BackgroundVideo[] = [],
   arabicFont: ArabicFontId = "amiri-quran",
+  wordHighlight: boolean = false,
+  audioWaveform: boolean = false,
+  transitionEffect: TransitionEffect = "none",
+  calligraphyEntrance: boolean = false,
   userId: string,
   projectId?: number,
   onProgress?: RenderProgressCallback
@@ -163,6 +167,10 @@ export async function triggerRender(
       arabicColor: template.arabicColor,
       translationColor: template.translationColor,
       arabicFontFamily: ARABIC_FONTS.find((f) => f.id === arabicFont)?.family || "Amiri Quran",
+      wordHighlight,
+      audioWaveform,
+      transitionEffect,
+      calligraphyEntrance,
       format,
     };
 

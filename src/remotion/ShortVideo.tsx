@@ -8,7 +8,7 @@ import {
   OffthreadVideo,
   staticFile,
 } from "remotion";
-import type { VideoCompositionProps } from "../types";
+import type { VideoCompositionProps, TransitionEffect } from "../types";
 import { ARABIC_FONTS } from "../types";
 
 /** Convert a number to Arabic-Indic numerals */
@@ -270,6 +270,10 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   translationColor,
   arabicFontFamily = "Amiri Quran",
   format = "vertical",
+  wordHighlight = false,
+  audioWaveform = false,
+  transitionEffect = "none",
+  calligraphyEntrance = false,
 }) => {
   const { width, height } = useVideoConfig();
 
@@ -329,6 +333,8 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
 
   let opacity = 1;
   let translateY = 0;
+  let translateX = 0;
+  let scale = 1;
   if (activeTimestamp) {
     const duration = activeTimestamp.endMs - activeTimestamp.startMs;
     const elapsed = currentTimeMs - activeTimestamp.startMs;
@@ -336,15 +342,39 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
     const fadeIn = Math.min(300, duration * 0.1);
     const fadeOut = Math.min(300, duration * 0.1);
 
+    const effectType: TransitionEffect = transitionEffect || "none";
+
     if (elapsed < fadeIn) {
       const t = elapsed / fadeIn;
       opacity = t;
-      translateY = 8 * (1 - t);
+      if (effectType === "slide") {
+        translateX = 60 * (1 - t);
+      } else if (effectType === "zoom") {
+        scale = 0.85 + 0.15 * t;
+      } else {
+        translateY = 8 * (1 - t);
+      }
     } else if (elapsed > duration - fadeOut) {
       const t = (duration - elapsed) / fadeOut;
       opacity = t;
-      translateY = -5 * (1 - t);
+      if (effectType === "slide") {
+        translateX = -60 * (1 - t);
+      } else if (effectType === "zoom") {
+        scale = 1 + 0.1 * (1 - t);
+      } else {
+        translateY = -5 * (1 - t);
+      }
     }
+  }
+
+  // Calligraphy entrance: mask-reveal effect on Arabic text
+  let calligraphyProgress = 1;
+  if (calligraphyEntrance && activeTimestamp) {
+    const elapsed = currentTimeMs - activeTimestamp.startMs;
+    const revealDuration = 800; // ms for full reveal
+    calligraphyProgress = Math.min(1, elapsed / revealDuration);
+    // Ease out cubic
+    calligraphyProgress = 1 - Math.pow(1 - calligraphyProgress, 3);
   }
 
   const showText = activeAyah !== null;
@@ -498,7 +528,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
           padding: isHorizontal ? "0 120px" : "0 80px",
           width: "100%",
           opacity,
-          transform: `translateY(${translateY}px)`,
+          transform: `translateY(${translateY}px) translateX(${translateX}px) scale(${scale})`,
         }}
       >
         {/* Surah header */}
@@ -550,12 +580,18 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
             direction: "rtl",
             maxWidth: isHorizontal ? 1400 : 900,
             marginBottom: 30 * scaleFactor,
+            // Calligraphy entrance: clip from right-to-left (RTL text reveal)
+            ...(calligraphyEntrance && calligraphyProgress < 1
+              ? {
+                  clipPath: `inset(0 0 0 ${(1 - calligraphyProgress) * 100}%)`,
+                }
+              : {}),
           }}
         >
           {(() => {
             const arabicWords = activeAyah.arabic.split(/\s+/);
             const ayahWt = activeIndex >= 0 ? wordTimings[activeIndex] : null;
-            const hasTimings = ayahWt && ayahWt.words.length > 0;
+            const hasTimings = wordHighlight && ayahWt && ayahWt.words.length > 0;
 
             return (
               <>
@@ -667,6 +703,67 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
           {activeAyah.surahName}
         </div>
       </div>}
+
+      {/* Audio waveform visualizer */}
+      {audioWaveform && showText && (() => {
+        // Generate pseudo-random waveform bars based on frame + ayah timing
+        const barCount = isHorizontal ? 60 : 40;
+        const barWidth = isHorizontal ? 3 : 2.5;
+        const barGap = isHorizontal ? 2 : 1.5;
+        const maxBarHeight = 28 * scaleFactor;
+        const totalWidth = barCount * (barWidth + barGap);
+
+        // Simulate audio energy based on elapsed time within ayah
+        const ayahElapsed = activeTimestamp ? currentTimeMs - activeTimestamp.startMs : 0;
+        const ayahDuration = activeTimestamp ? activeTimestamp.endMs - activeTimestamp.startMs : 1;
+        const normalizedTime = ayahElapsed / ayahDuration;
+
+        // Energy envelope: ramp up, sustain, ramp down
+        let energy = 1;
+        if (normalizedTime < 0.05) energy = normalizedTime / 0.05;
+        else if (normalizedTime > 0.95) energy = (1 - normalizedTime) / 0.05;
+
+        return (
+          <div
+            style={{
+              position: "absolute",
+              bottom: 60,
+              left: "50%",
+              transform: "translateX(-50%)",
+              display: "flex",
+              alignItems: "flex-end",
+              gap: barGap,
+              height: maxBarHeight,
+              opacity: 0.5 * opacity,
+              zIndex: 2,
+            }}
+          >
+            {Array.from({ length: barCount }).map((_, i) => {
+              // Use sin waves at different frequencies for pseudo-random look
+              const seed = i * 0.7 + frame * 0.15;
+              const wave1 = Math.sin(seed) * 0.5 + 0.5;
+              const wave2 = Math.sin(seed * 1.7 + 2.3) * 0.3 + 0.5;
+              const wave3 = Math.sin(seed * 0.3 + 5.1) * 0.2 + 0.5;
+              // Center bars are taller
+              const centerBias = 1 - Math.abs(i - barCount / 2) / (barCount / 2) * 0.4;
+              const h = Math.max(2, (wave1 * wave2 + wave3) * maxBarHeight * energy * centerBias * 0.7);
+
+              return (
+                <div
+                  key={i}
+                  style={{
+                    width: barWidth,
+                    height: h,
+                    borderRadius: barWidth / 2,
+                    backgroundColor: accentColor,
+                    opacity: 0.6 + wave1 * 0.4,
+                  }}
+                />
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Watermark — intro (top, first 2s) and outro (bottom, last 2s) */}
       {(() => {

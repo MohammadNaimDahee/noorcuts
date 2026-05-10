@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Player } from "@remotion/player";
 import { ShortVideo } from "@/remotion/ShortVideo";
 import { VIDEO_FORMATS } from "@/types";
-import type { VideoCompositionProps, VideoFormat, ArabicFontId } from "@/types";
+import type { VideoCompositionProps, VideoFormat, ArabicFontId, TransitionEffect } from "@/types";
 
 interface PreviewPlayerProps {
   surah: number;
@@ -14,6 +14,10 @@ interface PreviewPlayerProps {
   templateId: number;
   format: VideoFormat;
   arabicFont: ArabicFontId;
+  wordHighlight?: boolean;
+  audioWaveform?: boolean;
+  transitionEffect?: TransitionEffect;
+  calligraphyEntrance?: boolean;
   backgroundVideos?: string[];
 }
 
@@ -30,6 +34,10 @@ export function PreviewPlayer({
   templateId,
   format,
   arabicFont,
+  wordHighlight = false,
+  audioWaveform = false,
+  transitionEffect = "none",
+  calligraphyEntrance = false,
   backgroundVideos = [],
 }: PreviewPlayerProps) {
   const [data, setData] = useState<PreviewData | null>(null);
@@ -39,7 +47,7 @@ export function PreviewPlayer({
   bgVideosRef.current = backgroundVideos;
 
   // Stable key for when to re-fetch (only primitive deps)
-  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}`;
+  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}`;
 
   const loadPreview = useCallback(async () => {
     if (!surah || !ayahStart || !ayahEnd || !reciterId) return;
@@ -56,6 +64,10 @@ export function PreviewPlayer({
         templateId: String(templateId),
         format,
         arabicFont,
+        wordHighlight: String(wordHighlight),
+        audioWaveform: String(audioWaveform),
+        transitionEffect,
+        calligraphyEntrance: String(calligraphyEntrance),
       });
 
       const res = await fetch(`/api/preview?${params}`);
@@ -80,6 +92,10 @@ export function PreviewPlayer({
         translationColor: d.translationColor,
         arabicFontFamily: d.arabicFontFamily,
         format,
+        wordHighlight: d.wordHighlight ?? wordHighlight,
+        audioWaveform: d.audioWaveform ?? audioWaveform,
+        transitionEffect: d.transitionEffect ?? transitionEffect,
+        calligraphyEntrance: d.calligraphyEntrance ?? calligraphyEntrance,
       };
 
       setData({

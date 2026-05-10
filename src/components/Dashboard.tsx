@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import type { SurahInfo, Ayah, Template, RenderJob, VideoFormat, BackgroundVideo, ArabicFontId, Project } from "@/types";
+import type { SurahInfo, Ayah, Template, RenderJob, VideoFormat, BackgroundVideo, ArabicFontId, Project, TransitionEffect } from "@/types";
 import { VIDEO_FORMATS, ARABIC_FONTS } from "@/types";
 import { NoorLogo } from "./NoorLogo";
 import { SearchSelect } from "./SearchSelect";
@@ -32,6 +32,10 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<number>(1);
   const [selectedFormat, setSelectedFormat] = useState<VideoFormat>("vertical");
   const [selectedFont, setSelectedFont] = useState<ArabicFontId>("amiri-quran");
+  const [wordHighlight, setWordHighlight] = useState(false);
+  const [audioWaveform, setAudioWaveform] = useState(false);
+  const [transitionEffect, setTransitionEffect] = useState<TransitionEffect>("none");
+  const [calligraphyEntrance, setCalligraphyEntrance] = useState(false);
 
   // Background video state
   const [bgVideoQuery, setBgVideoQuery] = useState("");
@@ -39,6 +43,13 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [selectedBgVideos, setSelectedBgVideos] = useState<BackgroundVideo[]>([]);
   const [bgVideoSearching, setBgVideoSearching] = useState(false);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+
+  // Auto-clip state
+  const [clipSuggestions, setClipSuggestions] = useState<Array<{ ayahStart: number; ayahEnd: number; durationLabel: string; reason: string }>>([]);
+  const [clipLoading, setClipLoading] = useState(false);
+
+  // Thumbnail state
+  const [thumbnailLoading, setThumbnailLoading] = useState(false);
 
   // UI state
   const [leftTab, setLeftTab] = useState<LeftTab>("source");
@@ -87,6 +98,10 @@ export function Dashboard({ projectId }: DashboardProps) {
       else if (templateData.length > 0) setSelectedTemplate(templateData[0].id);
       if (found.format) setSelectedFormat(found.format as VideoFormat);
       if (found.arabicFont) setSelectedFont(found.arabicFont as ArabicFontId);
+      if (found.wordHighlight !== undefined) setWordHighlight(found.wordHighlight);
+      if (found.audioWaveform !== undefined) setAudioWaveform(found.audioWaveform);
+      if (found.transitionEffect) setTransitionEffect(found.transitionEffect);
+      if (found.calligraphyEntrance !== undefined) setCalligraphyEntrance(found.calligraphyEntrance);
 
       setProjectLoading(false);
     });
@@ -128,6 +143,51 @@ export function Dashboard({ projectId }: DashboardProps) {
     }
   };
 
+  const fetchClipSuggestions = async () => {
+    if (!selectedReciter) return;
+    setClipLoading(true);
+    try {
+      const res = await fetch(`/api/autoclip?surah=${selectedSurah}&reciterId=${selectedReciter}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setClipSuggestions(data);
+    } catch { /* ignore */ } finally {
+      setClipLoading(false);
+    }
+  };
+
+  const handleThumbnail = async () => {
+    setThumbnailLoading(true);
+    try {
+      const res = await fetch("/api/thumbnail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          surah: selectedSurah,
+          ayahStart,
+          ayahEnd,
+          reciterId: selectedReciter,
+          templateId: selectedTemplate,
+          format: selectedFormat,
+          arabicFont: selectedFont,
+          wordHighlight,
+          transitionEffect,
+        }),
+      });
+      if (!res.ok) throw new Error("Thumbnail generation failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `noorcuts-thumbnail-${selectedSurah}-${ayahStart}-${ayahEnd}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Thumbnail error");
+    } finally {
+      setThumbnailLoading(false);
+    }
+  };
+
   const toggleBgVideo = (video: BackgroundVideo) => {
     setSelectedBgVideos((prev) => {
       const exists = prev.find((v) => v.id === video.id);
@@ -152,6 +212,10 @@ export function Dashboard({ projectId }: DashboardProps) {
           templateId: selectedTemplate,
           format: selectedFormat,
           arabicFont: selectedFont,
+          wordHighlight,
+          audioWaveform,
+          transitionEffect,
+          calligraphyEntrance,
         }),
       });
       const updated = await res.json();
@@ -186,6 +250,10 @@ export function Dashboard({ projectId }: DashboardProps) {
           format: selectedFormat,
           backgroundVideos: selectedBgVideos,
           arabicFont: selectedFont,
+          wordHighlight,
+          audioWaveform,
+          transitionEffect,
+          calligraphyEntrance,
           projectId,
         }),
       });
@@ -526,6 +594,42 @@ export function Dashboard({ projectId }: DashboardProps) {
                     )}
                   </div>
                 </div>
+
+                <div className="border-t border-[#2a2a4a] pt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Auto-Clip</h3>
+                    <button
+                      onClick={fetchClipSuggestions}
+                      disabled={clipLoading || !selectedReciter}
+                      className="text-[9px] text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
+                    >
+                      {clipLoading ? "Finding..." : "Find Clips"}
+                    </button>
+                  </div>
+                  <p className="text-[9px] text-zinc-600 mb-2">Find optimal 30-60s segments</p>
+                  {clipSuggestions.length > 0 && (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {clipSuggestions.map((clip, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            setAyahStart(clip.ayahStart);
+                            setAyahEnd(clip.ayahEnd);
+                          }}
+                          className="flex w-full items-center justify-between rounded-md bg-[#0f0f20] px-2.5 py-1.5 text-left hover:bg-[#1a1a3a] transition-colors"
+                        >
+                          <div>
+                            <span className="text-[10px] text-zinc-300">
+                              {clip.ayahStart}-{clip.ayahEnd}
+                            </span>
+                            <span className="ml-1.5 text-[9px] text-zinc-600">{clip.reason}</span>
+                          </div>
+                          <span className="text-[9px] text-emerald-400 shrink-0">{clip.durationLabel}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -602,6 +706,106 @@ export function Dashboard({ projectId }: DashboardProps) {
                         </button>
                       );
                     })}
+                  </div>
+                </div>
+
+                <div className="border-t border-[#2a2a4a] pt-4">
+                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-2">Effects</h3>
+                  <div className="space-y-2">
+                    {/* Word Highlight toggle */}
+                    <label className="flex items-center justify-between cursor-pointer rounded-lg border border-[#2a2a4a] px-3 py-2.5 hover:border-zinc-500 transition-colors">
+                      <div>
+                        <div className="text-[11px] text-zinc-300">Word Highlight</div>
+                        <div className="text-[9px] text-zinc-600">Highlight each word as it&apos;s recited</div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={wordHighlight}
+                        onClick={() => setWordHighlight(!wordHighlight)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                          wordHighlight ? "bg-emerald-600" : "bg-[#2a2a4a]"
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                            wordHighlight ? "translate-x-4" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </label>
+
+                    {/* Audio Waveform toggle */}
+                    <label className="flex items-center justify-between cursor-pointer rounded-lg border border-[#2a2a4a] px-3 py-2.5 hover:border-zinc-500 transition-colors">
+                      <div>
+                        <div className="text-[11px] text-zinc-300">Audio Waveform</div>
+                        <div className="text-[9px] text-zinc-600">Animated bars synced to recitation</div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={audioWaveform}
+                        onClick={() => setAudioWaveform(!audioWaveform)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                          audioWaveform ? "bg-emerald-600" : "bg-[#2a2a4a]"
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                            audioWaveform ? "translate-x-4" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </label>
+
+                    {/* Calligraphy Entrance toggle */}
+                    <label className="flex items-center justify-between cursor-pointer rounded-lg border border-[#2a2a4a] px-3 py-2.5 hover:border-zinc-500 transition-colors">
+                      <div>
+                        <div className="text-[11px] text-zinc-300">Calligraphy Entrance</div>
+                        <div className="text-[9px] text-zinc-600">Arabic text reveals like calligraphy</div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={calligraphyEntrance}
+                        onClick={() => setCalligraphyEntrance(!calligraphyEntrance)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                          calligraphyEntrance ? "bg-emerald-600" : "bg-[#2a2a4a]"
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                            calligraphyEntrance ? "translate-x-4" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </label>
+
+                    {/* Transition Effect selector */}
+                    <div className="rounded-lg border border-[#2a2a4a] px-3 py-2.5">
+                      <div className="text-[11px] text-zinc-300 mb-1.5">Transition Effect</div>
+                      <div className="text-[9px] text-zinc-600 mb-2">Animation between ayahs</div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {([
+                          { id: "none" as const, label: "None" },
+                          { id: "crossfade" as const, label: "Fade" },
+                          { id: "slide" as const, label: "Slide" },
+                          { id: "zoom" as const, label: "Zoom" },
+                        ]).map((t) => (
+                          <button
+                            key={t.id}
+                            onClick={() => setTransitionEffect(t.id)}
+                            className={`rounded px-2 py-1 text-[10px] font-medium transition-all ${
+                              transitionEffect === t.id
+                                ? "bg-emerald-600 text-white"
+                                : "bg-[#0f0f20] text-zinc-500 hover:text-zinc-300"
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -762,6 +966,10 @@ export function Dashboard({ projectId }: DashboardProps) {
                   templateId={selectedTemplate}
                   format={selectedFormat}
                   arabicFont={selectedFont}
+                  wordHighlight={wordHighlight}
+                  audioWaveform={audioWaveform}
+                  transitionEffect={transitionEffect}
+                  calligraphyEntrance={calligraphyEntrance}
                 />
               </Suspense>
             </div>
@@ -901,6 +1109,29 @@ export function Dashboard({ projectId }: DashboardProps) {
                 <p className="text-[10px] text-zinc-600">Click Export to render</p>
               </div>
             )}
+
+            {/* Thumbnail button */}
+            <div className="mt-3 border-t border-[#2a2a4a] pt-3">
+              <button
+                onClick={handleThumbnail}
+                disabled={thumbnailLoading || !selectedReciter}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-[#2a2a4a] py-1.5 text-[10px] font-medium text-zinc-300 hover:bg-[#3a3a5a] disabled:opacity-40 transition-colors"
+              >
+                {thumbnailLoading ? (
+                  <>
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-500/30 border-t-zinc-300" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                    </svg>
+                    Generate Thumbnail
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* History */}

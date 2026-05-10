@@ -8,7 +8,7 @@ import {
 } from "@/lib/quran";
 import { getTemplate } from "@/lib/db";
 import { ARABIC_FONTS } from "@/types";
-import type { AyahTimestamp, AyahWordTimings, VideoFormat, ArabicFontId } from "@/types";
+import type { AyahTimestamp, AyahWordTimings, VideoFormat, ArabicFontId, TransitionEffect } from "@/types";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const { userId } = await auth();
@@ -24,6 +24,10 @@ export async function GET(request: Request): Promise<NextResponse> {
   const templateId = parseInt(searchParams.get("templateId") || "1", 10);
   const format = (searchParams.get("format") || "vertical") as VideoFormat;
   const arabicFont = (searchParams.get("arabicFont") || "amiri-quran") as ArabicFontId;
+  const wordHighlight = searchParams.get("wordHighlight") === "true";
+  const audioWaveform = searchParams.get("audioWaveform") === "true";
+  const transitionEffect = (searchParams.get("transitionEffect") || "none") as TransitionEffect;
+  const calligraphyEntrance = searchParams.get("calligraphyEntrance") === "true";
 
   if (!surah || !ayahStart || !ayahEnd || !reciterId) {
     return NextResponse.json(
@@ -115,6 +119,10 @@ export async function GET(request: Request): Promise<NextResponse> {
       translationColor: template.translationColor,
       arabicFontFamily: fontFamily,
       format,
+      wordHighlight,
+      audioWaveform,
+      transitionEffect,
+      calligraphyEntrance,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Preview data error";

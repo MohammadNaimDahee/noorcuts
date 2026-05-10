@@ -29,6 +29,10 @@ const defaultProps: VideoCompositionProps = {
   translationColor: "#CCCCCC",
   arabicFontFamily: "Amiri Quran",
   format: "vertical",
+  wordHighlight: false,
+  audioWaveform: false,
+  transitionEffect: "none",
+  calligraphyEntrance: false,
 };
 
 export const RemotionRoot: React.FC = () => {

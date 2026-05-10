@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
 import type { Template, RenderJob } from "@/types";
-import type { Project } from "@/types";
+import type { Project, TransitionEffect } from "@/types";
 
 const DB_PATH = path.join(process.cwd(), "noorcuts.db");
 const OUTPUT_DIR = path.join(process.cwd(), "output");
@@ -67,6 +67,10 @@ function runMigrations(database: any): void {
       template_id INTEGER,
       format TEXT DEFAULT 'vertical',
       arabic_font TEXT DEFAULT 'amiri-quran',
+      word_highlight INTEGER DEFAULT 0,
+      audio_waveform INTEGER DEFAULT 0,
+      transition_effect TEXT DEFAULT 'none',
+      calligraphy_entrance INTEGER DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -82,6 +86,21 @@ function runMigrations(database: any): void {
   }
   if (!rhCols.some((c) => c.name === "expires_at")) {
     database.exec("ALTER TABLE render_history ADD COLUMN expires_at TEXT");
+  }
+
+  // Migrations for projects table
+  const pCols = database.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>;
+  if (!pCols.some((c) => c.name === "word_highlight")) {
+    database.exec("ALTER TABLE projects ADD COLUMN word_highlight INTEGER DEFAULT 0");
+  }
+  if (!pCols.some((c) => c.name === "audio_waveform")) {
+    database.exec("ALTER TABLE projects ADD COLUMN audio_waveform INTEGER DEFAULT 0");
+  }
+  if (!pCols.some((c) => c.name === "transition_effect")) {
+    database.exec("ALTER TABLE projects ADD COLUMN transition_effect TEXT DEFAULT 'none'");
+  }
+  if (!pCols.some((c) => c.name === "calligraphy_entrance")) {
+    database.exec("ALTER TABLE projects ADD COLUMN calligraphy_entrance INTEGER DEFAULT 0");
   }
 
   // Mark any stale "rendering" jobs as failed (server restarted while they were running)
@@ -270,6 +289,10 @@ export function updateProject(
   if (updates.templateId !== undefined) { sets.push("template_id = ?"); values.push(updates.templateId); }
   if (updates.format !== undefined) { sets.push("format = ?"); values.push(updates.format); }
   if (updates.arabicFont !== undefined) { sets.push("arabic_font = ?"); values.push(updates.arabicFont); }
+  if (updates.wordHighlight !== undefined) { sets.push("word_highlight = ?"); values.push(updates.wordHighlight ? 1 : 0); }
+  if (updates.audioWaveform !== undefined) { sets.push("audio_waveform = ?"); values.push(updates.audioWaveform ? 1 : 0); }
+  if (updates.transitionEffect !== undefined) { sets.push("transition_effect = ?"); values.push(updates.transitionEffect); }
+  if (updates.calligraphyEntrance !== undefined) { sets.push("calligraphy_entrance = ?"); values.push(updates.calligraphyEntrance ? 1 : 0); }
 
   values.push(id, userId);
   getDb()
@@ -296,6 +319,10 @@ function rowToProject(row: Record<string, unknown>): Project {
     templateId: (row.template_id as number) || null,
     format: (row.format as string) || "vertical",
     arabicFont: (row.arabic_font as string) || "amiri-quran",
+    wordHighlight: !!(row.word_highlight as number),
+    audioWaveform: !!(row.audio_waveform as number),
+    transitionEffect: (row.transition_effect as TransitionEffect) || "none",
+    calligraphyEntrance: !!(row.calligraphy_entrance as number),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
