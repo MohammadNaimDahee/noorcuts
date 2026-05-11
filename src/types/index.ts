@@ -118,6 +118,7 @@ export interface RenderRequest {
   calligraphyEntrance?: boolean;
   surahIntro?: boolean;
   projectId?: number;
+  dataSource?: DataSource;
 }
 
 export type DataSource = "local" | "quran.com";

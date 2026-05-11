@@ -20,9 +20,10 @@ import {
   cleanupTempDir,
   prependSilence,
 } from "@/lib/ffmpeg";
-import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId, TransitionEffect, SurahMeta } from "@/types";
+import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId, TransitionEffect, SurahMeta, Ayah, AyahRecitation, DataSource } from "@/types";
 import { ARABIC_FONTS } from "@/types";
 import { updateRenderProgress } from "@/lib/render-progress";
+import { getAllVersesByChapter, getRecitationAudioFiles, getChapters } from "@/lib/qf-content";
 
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 const TEMP_DIR = path.join(process.cwd(), "output", ".tmp");
@@ -46,7 +47,8 @@ export async function triggerRender(
   surahIntro: boolean = false,
   userId: string,
   projectId?: number,
-  onProgress?: RenderProgressCallback
+  onProgress?: RenderProgressCallback,
+  dataSource: DataSource = "local"
 ): Promise<{ jobId: number; outputPath: string }> {
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -67,14 +69,59 @@ export async function triggerRender(
   try {
     // Gather data
     emitProgress("Gathering ayah data", 0);
-    const ayahs = getAyahRange(surah, ayahStart, ayahEnd);
-    if (ayahs.length === 0) {
-      throw new Error(`No ayahs found for surah ${surah}, ayah ${ayahStart}-${ayahEnd}`);
-    }
 
-    const recitations = getRecitations(reciterId, surah, ayahStart, ayahEnd);
-    if (recitations.length === 0) {
-      throw new Error(`No recitations found for reciter ${reciterId}, surah ${surah}`);
+    let ayahs: Ayah[];
+    let recitations: AyahRecitation[];
+
+    if (dataSource === "quran.com") {
+      // Fetch from Quran Foundation API
+      const [qfVerses, qfChapters] = await Promise.all([
+        getAllVersesByChapter(surah, "131"),
+        getChapters(),
+      ]);
+      const chapter = qfChapters.find((c) => c.id === surah);
+      const filteredVerses = qfVerses.filter(
+        (v) => v.verse_number >= ayahStart && v.verse_number <= ayahEnd
+      );
+      if (filteredVerses.length === 0) {
+        throw new Error(`No ayahs found for surah ${surah}, ayah ${ayahStart}-${ayahEnd}`);
+      }
+      ayahs = filteredVerses.map((v) => ({
+        surah,
+        ayah: v.verse_number,
+        surahName: chapter?.name_arabic || "",
+        surahNameEn: chapter?.name_simple || "",
+        arabic: v.text_uthmani || v.text_imlaei || "",
+        translation_en: v.translations?.[0]?.text || "",
+      }));
+
+      // Fetch audio files from QF API
+      const qfAudio = await getRecitationAudioFiles(Number(reciterId), surah);
+      const filteredAudio = qfAudio.filter((a) => {
+        const ayahNum = parseInt(a.verse_key.split(":")[1], 10);
+        return ayahNum >= ayahStart && ayahNum <= ayahEnd;
+      });
+      if (filteredAudio.length === 0) {
+        throw new Error(`No audio found for reciter ${reciterId}, surah ${surah}`);
+      }
+      recitations = filteredAudio.map((a) => ({
+        surahNumber: surah,
+        ayahNumber: parseInt(a.verse_key.split(":")[1], 10),
+        audioUrl: a.url.startsWith("http") ? a.url : `https://audio.qurancdn.com/${a.url}`,
+        duration: 0, // will be determined by ffprobe during download
+        segments: [],
+      }));
+    } else {
+      // Local data
+      ayahs = getAyahRange(surah, ayahStart, ayahEnd);
+      if (ayahs.length === 0) {
+        throw new Error(`No ayahs found for surah ${surah}, ayah ${ayahStart}-${ayahEnd}`);
+      }
+
+      recitations = getRecitations(reciterId, surah, ayahStart, ayahEnd);
+      if (recitations.length === 0) {
+        throw new Error(`No recitations found for reciter ${reciterId}, surah ${surah}`);
+      }
     }
 
     const template = getTemplate(templateId);
@@ -84,7 +131,7 @@ export async function triggerRender(
     let totalDurationMs: number;
     const concatAudioPath = path.join(jobTempDir, "audio.mp3");
 
-    if (isSurahLevelReciter(reciterId)) {
+    if (dataSource === "local" && isSurahLevelReciter(reciterId)) {
       // Surah-level reciter: one audio file, extract the relevant portion
       emitProgress("Downloading audio", 5);
       const surahTimestamps = getSurahLevelTimestamps(reciterId, surah, ayahStart, ayahEnd);
@@ -130,12 +177,20 @@ export async function triggerRender(
     const INTRO_DURATION_MS = 3500;
     let surahMeta: SurahMeta | null = null;
     if (surahIntro) {
-      const surahList = getSurahList();
-      const surahInfo = surahList.find((s) => s.id === surah);
+      let totalVerses = ayahEnd;
+      if (dataSource === "quran.com") {
+        const chapters = await getChapters();
+        const ch = chapters.find((c) => c.id === surah);
+        totalVerses = ch?.verses_count || ayahEnd;
+      } else {
+        const surahList = getSurahList();
+        const surahInfo = surahList.find((s) => s.id === surah);
+        totalVerses = surahInfo?.totalVerses || ayahEnd;
+      }
       surahMeta = {
         name: ayahs[0].surahName,
         nameEn: ayahs[0].surahNameEn,
-        totalVerses: surahInfo?.totalVerses || ayahEnd,
+        totalVerses,
         revelationType: getSurahRevelationType(surah),
         introDurationMs: INTRO_DURATION_MS,
       };

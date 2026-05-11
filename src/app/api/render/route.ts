@@ -14,7 +14,7 @@ export async function POST(request: Request): Promise<Response> {
   try { cleanupExpiredRenders(); } catch { /* ignore */ }
 
   const body = (await request.json()) as RenderRequest;
-  const { surah, ayahStart, ayahEnd, reciterId, templateId, format, backgroundVideos, arabicFont, wordHighlight, audioWaveform, transitionEffect, calligraphyEntrance, surahIntro, projectId } = body;
+  const { surah, ayahStart, ayahEnd, reciterId, templateId, format, backgroundVideos, arabicFont, wordHighlight, audioWaveform, transitionEffect, calligraphyEntrance, surahIntro, projectId, dataSource } = body;
 
   if (!surah || !ayahStart || !ayahEnd || !reciterId || !templateId) {
     return NextResponse.json(
@@ -47,7 +47,8 @@ export async function POST(request: Request): Promise<Response> {
         projectId,
         async (stage, progress) => {
           await sendEvent({ type: "progress", stage, progress });
-        }
+        },
+        dataSource || "local"
       );
       const filename = path.basename(result.outputPath);
       const downloadUrl = `/api/download?file=${encodeURIComponent(filename)}`;

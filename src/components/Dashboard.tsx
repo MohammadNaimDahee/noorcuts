@@ -325,6 +325,7 @@ export function Dashboard({ projectId }: DashboardProps) {
           calligraphyEntrance,
           surahIntro,
           projectId,
+          dataSource: project?.dataSource || "local",
         }),
       });
 
