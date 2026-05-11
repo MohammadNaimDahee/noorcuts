@@ -1,6 +1,6 @@
 export default function TermsPage() {
   return (
-    <main className="mx-auto max-w-2xl px-6 py-16 text-zinc-300">
+    <main className="mx-auto max-w-2xl px-6 py-16 text-zinc-300 h-full overflow-y-auto">
       <h1 className="mb-8 text-2xl font-bold text-white">Terms of Service</h1>
       <p className="mb-4 text-sm text-zinc-500">Last updated: May 11, 2026</p>
 
