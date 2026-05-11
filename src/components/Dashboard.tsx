@@ -216,6 +216,7 @@ export function Dashboard({ projectId }: DashboardProps) {
           arabicFont: selectedFont,
           wordHighlight,
           transitionEffect,
+          dataSource: project?.dataSource || "local",
         }),
       });
       if (!res.ok) throw new Error("Thumbnail generation failed");
@@ -1068,6 +1069,7 @@ export function Dashboard({ projectId }: DashboardProps) {
                   transitionEffect={transitionEffect}
                   calligraphyEntrance={calligraphyEntrance}
                   surahIntro={surahIntro}
+                  dataSource={project?.dataSource || "local"}
                 />
               </Suspense>
             </div>

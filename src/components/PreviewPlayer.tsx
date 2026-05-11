@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Player } from "@remotion/player";
 import { ShortVideo } from "@/remotion/ShortVideo";
 import { VIDEO_FORMATS } from "@/types";
-import type { VideoCompositionProps, VideoFormat, ArabicFontId, TransitionEffect } from "@/types";
+import type { VideoCompositionProps, VideoFormat, ArabicFontId, TransitionEffect, DataSource } from "@/types";
 
 interface PreviewPlayerProps {
   surah: number;
@@ -20,6 +20,7 @@ interface PreviewPlayerProps {
   calligraphyEntrance?: boolean;
   surahIntro?: boolean;
   backgroundVideos?: string[];
+  dataSource?: DataSource;
 }
 
 interface PreviewData {
@@ -41,6 +42,7 @@ export function PreviewPlayer({
   calligraphyEntrance = false,
   surahIntro = false,
   backgroundVideos = [],
+  dataSource = "local",
 }: PreviewPlayerProps) {
   const [data, setData] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,7 +51,7 @@ export function PreviewPlayer({
   bgVideosRef.current = backgroundVideos;
 
   // Stable key for when to re-fetch (only primitive deps)
-  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}`;
+  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}-${dataSource}`;
 
   const loadPreview = useCallback(async () => {
     if (!surah || !ayahStart || !ayahEnd || !reciterId) return;
@@ -71,6 +73,7 @@ export function PreviewPlayer({
         transitionEffect,
         calligraphyEntrance: String(calligraphyEntrance),
         surahIntro: String(surahIntro),
+        dataSource,
       });
 
       const res = await fetch(`/api/preview?${params}`);

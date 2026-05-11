@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import {
-  getAyahRange,
-  getRecitations,
   isSurahLevelReciter,
   getSurahLevelTimestamps,
   getSurahList,
   getSurahRevelationType,
 } from "@/lib/quran";
 import { getTemplate } from "@/lib/db";
+import { fetchAyahData } from "@/lib/qf-data";
+import { getChapters } from "@/lib/qf-content";
 import { ARABIC_FONTS } from "@/types";
-import type { AyahTimestamp, AyahWordTimings, VideoFormat, ArabicFontId, TransitionEffect, SurahMeta } from "@/types";
+import type { AyahTimestamp, AyahWordTimings, VideoFormat, ArabicFontId, TransitionEffect, SurahMeta, DataSource } from "@/types";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const { userId } = await auth();
@@ -31,6 +31,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const transitionEffect = (searchParams.get("transitionEffect") || "none") as TransitionEffect;
   const calligraphyEntrance = searchParams.get("calligraphyEntrance") === "true";
   const surahIntro = searchParams.get("surahIntro") === "true";
+  const dataSource = (searchParams.get("dataSource") || "local") as DataSource;
 
   if (!surah || !ayahStart || !ayahEnd || !reciterId) {
     return NextResponse.json(
@@ -40,15 +41,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const ayahs = getAyahRange(surah, ayahStart, ayahEnd);
-    if (ayahs.length === 0) {
-      return NextResponse.json({ error: "No ayahs found" }, { status: 404 });
-    }
-
-    const recitations = getRecitations(reciterId, surah, ayahStart, ayahEnd);
-    if (recitations.length === 0) {
-      return NextResponse.json({ error: "No recitations found" }, { status: 404 });
-    }
+    const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource);
 
     const template = getTemplate(templateId);
     if (!template) {
@@ -59,7 +52,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     let audioUrls: string[];
     let totalDurationMs: number;
 
-    if (isSurahLevelReciter(reciterId)) {
+    if (dataSource === "local" && isSurahLevelReciter(reciterId)) {
       const surahTimestamps = getSurahLevelTimestamps(reciterId, surah, ayahStart, ayahEnd);
       const firstStart = surahTimestamps[0].startMs;
       const lastEnd = surahTimestamps[surahTimestamps.length - 1].endMs;
@@ -70,15 +63,16 @@ export async function GET(request: Request): Promise<NextResponse> {
         endMs: ts.endMs - firstStart,
       }));
       totalDurationMs = lastEnd - firstStart;
-      // For surah-level, we'd need to extract audio segment — use individual ayah URLs as fallback
       audioUrls = recitations.map((r) => r.audioUrl);
     } else {
-      // Ayah-level: build cumulative timestamps from segment data
+      // Ayah-level (local or QF)
       let cumulativeMs = 0;
       timestamps = recitations.map((r) => {
-        // Use last segment's endMs for precise duration
         const lastSeg = r.segments[r.segments.length - 1];
-        const ayahDurationMs = lastSeg ? parseInt(String(lastSeg[3]), 10) : (r.duration * 1000);
+        // For QF recitations, segments are empty — use a default 3s per ayah for preview
+        const ayahDurationMs = lastSeg
+          ? parseInt(String(lastSeg[3]), 10)
+          : (r.duration > 0 ? r.duration * 1000 : 3000);
         const ts = {
           ayah: r.ayahNumber,
           startMs: cumulativeMs,
@@ -95,12 +89,20 @@ export async function GET(request: Request): Promise<NextResponse> {
     const INTRO_DURATION_MS = 3500;
     let surahMeta: SurahMeta | null = null;
     if (surahIntro) {
-      const surahList = getSurahList();
-      const surahInfo = surahList.find((s) => s.id === surah);
+      let totalVerses = ayahEnd;
+      if (dataSource === "quran.com") {
+        const chapters = await getChapters();
+        const ch = chapters.find((c) => c.id === surah);
+        totalVerses = ch?.verses_count || ayahEnd;
+      } else {
+        const surahList = getSurahList();
+        const surahInfo = surahList.find((s) => s.id === surah);
+        totalVerses = surahInfo?.totalVerses || ayahEnd;
+      }
       surahMeta = {
         name: ayahs[0].surahName,
         nameEn: ayahs[0].surahNameEn,
-        totalVerses: surahInfo?.totalVerses || ayahEnd,
+        totalVerses,
         revelationType: getSurahRevelationType(surah),
         introDurationMs: INTRO_DURATION_MS,
       };

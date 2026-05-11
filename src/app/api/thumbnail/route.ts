@@ -5,23 +5,17 @@ import { auth } from "@clerk/nextjs/server";
 import { bundle } from "@remotion/bundler";
 import { renderStill, selectComposition } from "@remotion/renderer";
 import {
-  getAyahRange,
-  getRecitations,
   isSurahLevelReciter,
   getSurahLevelTimestamps,
 } from "@/lib/quran";
 import { getTemplate } from "@/lib/db";
+import { fetchAyahData } from "@/lib/qf-data";
 import { ARABIC_FONTS } from "@/types";
-import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, ArabicFontId, TransitionEffect } from "@/types";
+import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, ArabicFontId, TransitionEffect, DataSource } from "@/types";
 
 const REMOTION_ENTRY = path.join(process.cwd(), "src", "remotion", "index.ts");
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 
-/**
- * POST /api/thumbnail
- *
- * Renders a single frame (the first ayah's midpoint) as a PNG thumbnail.
- */
 export async function POST(request: Request): Promise<Response> {
   const { userId } = await auth();
   if (!userId) {
@@ -42,6 +36,7 @@ export async function POST(request: Request): Promise<Response> {
       audioWaveform = false,
       transitionEffect = "none",
       calligraphyEntrance = false,
+      dataSource = "local",
     } = body as {
       surah: number;
       ayahStart: number;
@@ -54,6 +49,7 @@ export async function POST(request: Request): Promise<Response> {
       audioWaveform?: boolean;
       transitionEffect?: TransitionEffect;
       calligraphyEntrance?: boolean;
+      dataSource?: DataSource;
     };
 
     if (!surah || !ayahStart || !ayahEnd || !reciterId || !templateId) {
@@ -63,15 +59,7 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const ayahs = getAyahRange(surah, ayahStart, ayahEnd);
-    if (ayahs.length === 0) {
-      return NextResponse.json({ error: "No ayahs found" }, { status: 404 });
-    }
-
-    const recitations = getRecitations(reciterId, surah, ayahStart, ayahEnd);
-    if (recitations.length === 0) {
-      return NextResponse.json({ error: "No recitations found" }, { status: 404 });
-    }
+    const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource);
 
     const template = getTemplate(templateId);
     if (!template) {
@@ -82,7 +70,7 @@ export async function POST(request: Request): Promise<Response> {
     let timestamps: AyahTimestamp[];
     let totalDurationMs: number;
 
-    if (isSurahLevelReciter(reciterId)) {
+    if (dataSource === "local" && isSurahLevelReciter(reciterId)) {
       const surahTimestamps = getSurahLevelTimestamps(reciterId, surah, ayahStart, ayahEnd);
       const firstStart = surahTimestamps[0].startMs;
       const lastEnd = surahTimestamps[surahTimestamps.length - 1].endMs;
@@ -96,7 +84,9 @@ export async function POST(request: Request): Promise<Response> {
       let cumulativeMs = 0;
       timestamps = recitations.map((r) => {
         const lastSeg = r.segments[r.segments.length - 1];
-        const ayahDurationMs = lastSeg ? parseInt(String(lastSeg[3]), 10) : r.duration * 1000;
+        const ayahDurationMs = lastSeg
+          ? parseInt(String(lastSeg[3]), 10)
+          : (r.duration > 0 ? r.duration * 1000 : 3000);
         const ts = {
           ayah: r.ayahNumber,
           startMs: cumulativeMs,
@@ -143,10 +133,10 @@ export async function POST(request: Request): Promise<Response> {
       translationColor: template.translationColor,
       arabicFontFamily: fontFamily,
       wordHighlight,
-      audioWaveform: false, // no waveform on thumbnail
+      audioWaveform: false,
       transitionEffect: transitionEffect as TransitionEffect,
-      calligraphyEntrance: false, // show fully revealed text
-      surahIntro: false, // no intro on thumbnail
+      calligraphyEntrance: false,
+      surahIntro: false,
       surahMeta: null,
       format: format as VideoFormat,
     };
@@ -192,10 +182,7 @@ export async function POST(request: Request): Promise<Response> {
       frame: Math.min(thumbnailFrame, totalDurationFrames - 1),
     });
 
-    // Read the file and return it
     const imageBuffer = fs.readFileSync(outputPath);
-
-    // Clean up file after reading
     fs.unlinkSync(outputPath);
 
     return new Response(imageBuffer, {
