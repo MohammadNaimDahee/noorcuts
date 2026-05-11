@@ -120,11 +120,14 @@ export interface RenderRequest {
   projectId?: number;
 }
 
+export type DataSource = "local" | "quran.com";
+
 export interface Project {
   id: number;
   userId: string;
   name: string;
   description: string;
+  dataSource: DataSource;
   surah: number | null;
   ayahStart: number | null;
   ayahEnd: number | null;

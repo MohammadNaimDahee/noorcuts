@@ -72,6 +72,7 @@ function runMigrations(database: any): void {
       transition_effect TEXT DEFAULT 'none',
       calligraphy_entrance INTEGER DEFAULT 0,
       surah_intro INTEGER DEFAULT 0,
+      data_source TEXT DEFAULT 'local',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -105,6 +106,9 @@ function runMigrations(database: any): void {
   }
   if (!pCols.some((c) => c.name === "surah_intro")) {
     database.exec("ALTER TABLE projects ADD COLUMN surah_intro INTEGER DEFAULT 0");
+  }
+  if (!pCols.some((c) => c.name === "data_source")) {
+    database.exec("ALTER TABLE projects ADD COLUMN data_source TEXT DEFAULT 'local'");
   }
 
   // Mark any stale "rendering" jobs as failed (server restarted while they were running)
@@ -271,12 +275,12 @@ function rowToRenderJob(row: Record<string, unknown>): RenderJob {
 
 // ═══════ Projects ═══════
 
-export function createProject(userId: string, name: string, description?: string): number {
+export function createProject(userId: string, name: string, description?: string, dataSource?: string): number {
   const result = getDb()
     .prepare(
-      `INSERT INTO projects (user_id, name, description) VALUES (?, ?, ?)`
+      `INSERT INTO projects (user_id, name, description, data_source) VALUES (?, ?, ?, ?)`
     )
-    .run(userId, name, description || "");
+    .run(userId, name, description || "", dataSource || "local");
   return Number(result.lastInsertRowid);
 }
 
@@ -316,6 +320,7 @@ export function updateProject(
   if (updates.transitionEffect !== undefined) { sets.push("transition_effect = ?"); values.push(updates.transitionEffect); }
   if (updates.calligraphyEntrance !== undefined) { sets.push("calligraphy_entrance = ?"); values.push(updates.calligraphyEntrance ? 1 : 0); }
   if (updates.surahIntro !== undefined) { sets.push("surah_intro = ?"); values.push(updates.surahIntro ? 1 : 0); }
+  if (updates.dataSource !== undefined) { sets.push("data_source = ?"); values.push(updates.dataSource); }
 
   values.push(id, userId);
   getDb()
@@ -335,6 +340,7 @@ function rowToProject(row: Record<string, unknown>): Project {
     userId: row.user_id as string,
     name: row.name as string,
     description: (row.description as string) || "",
+    dataSource: ((row.data_source as string) || "local") as "local" | "quran.com",
     surah: (row.surah as number) || null,
     ayahStart: (row.ayah_start as number) || null,
     ayahEnd: (row.ayah_end as number) || null,

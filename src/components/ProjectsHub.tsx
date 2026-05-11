@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import type { Project } from "@/types";
+import type { Project, DataSource } from "@/types";
 import { NoorLogo } from "./NoorLogo";
 import { UserButton } from "@clerk/nextjs";
 
@@ -12,6 +12,7 @@ export function ProjectsHub() {
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
+  const [newDataSource, setNewDataSource] = useState<DataSource>("quran.com");
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -31,7 +32,7 @@ export function ProjectsHub() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), description: newDesc.trim() }),
+        body: JSON.stringify({ name: newName.trim(), description: newDesc.trim(), dataSource: newDataSource }),
       });
       const project = await res.json();
       router.push(`/projects/${project.id}`);
@@ -101,6 +102,39 @@ export function ProjectsHub() {
                   placeholder="Description (optional)"
                   className="studio-input w-full"
                 />
+                <div>
+                  <label className="mb-1.5 block text-xs text-zinc-400">Data Source</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewDataSource("quran.com")}
+                      className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                        newDataSource === "quran.com"
+                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
+                          : "border-[#2a2a4a] bg-[#0f0f20] text-zinc-400 hover:border-zinc-600"
+                      }`}
+                    >
+                      <div className="text-left">
+                        <div>Quran.com API</div>
+                        <div className="mt-0.5 text-[10px] font-normal opacity-60">All reciters, translations, live data</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewDataSource("local")}
+                      className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                        newDataSource === "local"
+                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
+                          : "border-[#2a2a4a] bg-[#0f0f20] text-zinc-400 hover:border-zinc-600"
+                      }`}
+                    >
+                      <div className="text-left">
+                        <div>Local Data</div>
+                        <div className="mt-0.5 text-[10px] font-normal opacity-60">Offline, 2 reciters, Sahih Intl</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
                 <div className="flex justify-end gap-2">
                   <button
                     onClick={() => { setShowCreate(false); setNewName(""); setNewDesc(""); }}
@@ -173,6 +207,9 @@ export function ProjectsHub() {
                       <span className="rounded bg-[#0f0f20] px-1.5 py-0.5">No source set</span>
                     )}
                     <span className="rounded bg-[#0f0f20] px-1.5 py-0.5">{p.format}</span>
+                    <span className={`rounded px-1.5 py-0.5 ${p.dataSource === "quran.com" ? "bg-emerald-500/10 text-emerald-500" : "bg-[#0f0f20]"}`}>
+                      {p.dataSource === "quran.com" ? "Quran.com" : "Local"}
+                    </span>
                     <span className="ml-auto">{new Date(p.updatedAt).toLocaleDateString()}</span>
                   </div>
                 </div>

@@ -17,13 +17,13 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const body = await request.json();
-  const { name, description } = body;
+  const { name, description, dataSource } = body;
 
   if (!name || typeof name !== "string" || !name.trim()) {
     return NextResponse.json({ error: "Project name is required" }, { status: 400 });
   }
 
-  const id = createProject(userId, name.trim(), description);
+  const id = createProject(userId, name.trim(), description, dataSource);
   const project = getProject(id, userId);
   return NextResponse.json(project, { status: 201 });
 }

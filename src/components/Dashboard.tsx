@@ -71,27 +71,48 @@ export function Dashboard({ projectId }: DashboardProps) {
 
   // Load initial data + project
   useEffect(() => {
+    // First fetch project info to determine data source
     Promise.all([
-      fetch("/api/quran").then((r) => r.json()),
-      fetch("/api/reciters").then((r) => r.json()),
+      fetch("/api/projects").then((r) => r.json()),
       fetch("/api/templates").then((r) => r.json()),
       fetch(`/api/render?projectId=${projectId}`).then((r) => r.json()),
-      fetch("/api/projects").then((r) => r.json()),
-    ]).then(([surahData, reciterData, templateData, historyData, projectData]) => {
-      setSurahs(surahData);
-      setReciters(reciterData);
+    ]).then(async ([projectData, templateData, historyData]) => {
       setTemplates(templateData);
       setRenderHistory(Array.isArray(historyData) ? historyData : []);
 
-      // Find the project
       const allProjects = Array.isArray(projectData) ? projectData : [];
       const found = allProjects.find((p: Project) => p.id === projectId);
       if (!found) {
-        // Project not found, redirect to home
         router.push("/");
         return;
       }
       setProject(found);
+
+      // Fetch surahs and reciters based on data source
+      const useQf = found.dataSource === "quran.com";
+      const [surahData, reciterData] = await Promise.all([
+        useQf
+          ? fetch("/api/qf/chapters").then((r) => r.json()).then((d) =>
+              (d.chapters || []).map((c: { id: number; name_arabic: string; name_simple: string; verses_count: number }) => ({
+                id: c.id,
+                name: c.name_arabic,
+                nameEn: c.name_simple,
+                totalVerses: c.verses_count,
+              }))
+            )
+          : fetch("/api/quran").then((r) => r.json()),
+        useQf
+          ? fetch("/api/qf/reciters").then((r) => r.json()).then((d) =>
+              (d.recitations || []).map((r: { id: number; reciter_name: string; style: string | null }) => ({
+                id: String(r.id),
+                name: r.style ? `${r.reciter_name} (${r.style})` : r.reciter_name,
+              }))
+            )
+          : fetch("/api/reciters").then((r) => r.json()),
+      ]);
+
+      setSurahs(surahData);
+      setReciters(reciterData);
 
       // Load project settings into form
       if (found.surah) setSelectedSurah(found.surah);
@@ -464,6 +485,9 @@ export function Dashboard({ projectId }: DashboardProps) {
           </button>
           <div className="h-4 w-px bg-[#2a2a4a]" />
           <span className="text-xs font-medium text-zinc-300">{project?.name}</span>
+          {project?.dataSource === "quran.com" && (
+            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">Quran.com</span>
+          )}
           <button
             onClick={handleSaveProject}
             disabled={saving}
