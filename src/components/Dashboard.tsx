@@ -90,26 +90,44 @@ export function Dashboard({ projectId }: DashboardProps) {
 
       // Fetch surahs and reciters based on data source
       const useQf = found.dataSource === "quran.com";
-      const [surahData, reciterData] = await Promise.all([
-        useQf
-          ? fetch("/api/qf/chapters").then((r) => r.json()).then((d) =>
-              (d.chapters || []).map((c: { id: number; name_arabic: string; name_simple: string; verses_count: number }) => ({
-                id: c.id,
-                name: c.name_arabic,
-                nameEn: c.name_simple,
-                totalVerses: c.verses_count,
-              }))
-            )
-          : fetch("/api/quran").then((r) => r.json()),
-        useQf
-          ? fetch("/api/qf/reciters").then((r) => r.json()).then((d) =>
-              (d.recitations || []).map((r: { id: number; reciter_name: string; style: string | null }) => ({
-                id: String(r.id),
-                name: r.style ? `${r.reciter_name} (${r.style})` : r.reciter_name,
-              }))
-            )
-          : fetch("/api/reciters").then((r) => r.json()),
-      ]);
+      let surahData: SurahInfo[] = [];
+      let reciterData: Array<{ id: string; name: string }> = [];
+
+      try {
+        [surahData, reciterData] = await Promise.all([
+          useQf
+            ? fetch("/api/qf/chapters").then((r) => {
+                if (!r.ok) throw new Error("QF chapters failed");
+                return r.json();
+              }).then((d) =>
+                (d.chapters || []).map((c: { id: number; name_arabic: string; name_simple: string; verses_count: number }) => ({
+                  id: c.id,
+                  name: c.name_arabic,
+                  nameEn: c.name_simple,
+                  totalVerses: c.verses_count,
+                }))
+              )
+            : fetch("/api/quran").then((r) => r.json()),
+          useQf
+            ? fetch("/api/qf/reciters").then((r) => {
+                if (!r.ok) throw new Error("QF reciters failed");
+                return r.json();
+              }).then((d) =>
+                (d.recitations || []).map((r: { id: number; reciter_name: string; style: string | null }) => ({
+                  id: String(r.id),
+                  name: r.style ? `${r.reciter_name} (${r.style})` : r.reciter_name,
+                }))
+              )
+            : fetch("/api/reciters").then((r) => r.json()),
+        ]);
+      } catch {
+        // QF API failed — fall back to local data
+        console.warn("Quran.com API failed, falling back to local data");
+        [surahData, reciterData] = await Promise.all([
+          fetch("/api/quran").then((r) => r.json()),
+          fetch("/api/reciters").then((r) => r.json()),
+        ]);
+      }
 
       setSurahs(surahData);
       setReciters(reciterData);
