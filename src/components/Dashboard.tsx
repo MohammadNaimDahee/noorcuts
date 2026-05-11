@@ -52,6 +52,10 @@ export function Dashboard({ projectId }: DashboardProps) {
   // Thumbnail state
   const [thumbnailLoading, setThumbnailLoading] = useState(false);
 
+  // Tixsly state
+  const [tixslyLoading, setTixslyLoading] = useState(false);
+  const [tixslyResult, setTixslyResult] = useState<string | null>(null);
+
   // UI state
   const [leftTab, setLeftTab] = useState<LeftTab>("source");
   const [preview, setPreview] = useState<Ayah[]>([]);
@@ -187,6 +191,29 @@ export function Dashboard({ projectId }: DashboardProps) {
       setError(err instanceof Error ? err.message : "Thumbnail error");
     } finally {
       setThumbnailLoading(false);
+    }
+  };
+
+  const handleSendToTixsly = async () => {
+    if (!downloadUrl) return;
+    setTixslyLoading(true);
+    setTixslyResult(null);
+    try {
+      const filename = downloadUrl.split("file=")[1] || "";
+      const surahInfo = surahs.find((s) => s.id === selectedSurah);
+      const description = `Surah ${surahInfo?.nameEn || selectedSurah} (${ayahStart}-${ayahEnd}) - Quran Recitation`;
+      const res = await fetch("/api/tixsly", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: decodeURIComponent(filename), description }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      setTixslyResult("Sent to Tixsly");
+    } catch (err) {
+      setTixslyResult(err instanceof Error ? err.message : "Send failed");
+    } finally {
+      setTixslyLoading(false);
     }
   };
 
@@ -1116,7 +1143,19 @@ export function Dashboard({ projectId }: DashboardProps) {
                 >
                   {playUrl ? "Hide" : "Play"}
                 </button>
+                <button
+                  onClick={handleSendToTixsly}
+                  disabled={tixslyLoading}
+                  className="flex-1 rounded-md bg-purple-600 py-1.5 text-[10px] font-semibold text-white hover:bg-purple-500 disabled:opacity-40 transition-colors"
+                >
+                  {tixslyLoading ? "Sending..." : "Tixsly"}
+                </button>
               </div>
+            )}
+            {tixslyResult && !rendering && (
+              <p className={`mt-1 text-[10px] ${tixslyResult === "Sent to Tixsly" ? "text-purple-400" : "text-red-400"}`}>
+                {tixslyResult}
+              </p>
             )}
 
             {playUrl && (
