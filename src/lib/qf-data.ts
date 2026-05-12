@@ -51,7 +51,7 @@ function remapSegments(
   indexMap: Map<number, number>
 ): WordSegment[] {
   return segments.map((s) => {
-    const qfWordIdx = s[0];
+    const qfWordIdx = Number(s[0]);
     const mappedIdx = indexMap.get(qfWordIdx);
     if (mappedIdx !== undefined) {
       return [String(mappedIdx), String(mappedIdx + 1), String(s[2]), String(s[3])] as WordSegment;

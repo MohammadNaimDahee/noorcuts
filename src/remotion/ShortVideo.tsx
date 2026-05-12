@@ -1058,7 +1058,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
 
                     if (hasTimings) {
                       // Find this word's timing
-                      const seg = ayahWt.words.find(([wIdx]) => wIdx === i);
+                      const seg = ayahWt.words.find(([wStart, wEnd]) => i >= Number(wStart) && i < Number(wEnd));
 
                       if (seg) {
                         const [, , wStart, wEnd] = seg;
