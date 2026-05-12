@@ -30,7 +30,7 @@ function runMigrations(database: any): void {
       background_color TEXT NOT NULL DEFAULT '#000000',
       background_image TEXT,
       arabic_font_size INTEGER NOT NULL DEFAULT 48,
-      translation_font_size INTEGER NOT NULL DEFAULT 24,
+      translation_font_size INTEGER NOT NULL DEFAULT 32,
       arabic_color TEXT NOT NULL DEFAULT '#FFFFFF',
       translation_color TEXT NOT NULL DEFAULT '#CCCCCC',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -127,32 +127,32 @@ function runMigrations(database: any): void {
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
 
-    insert.run("Classic Dark", "color", "#0a0a14", 52, 28, "#FFFFFF", "#C8C0B0");
-    insert.run("Midnight Blue", "color", "#0a1628", 52, 28, "#E8E4DC", "#8899AA");
-    insert.run("Desert Sand", "color", "#1a1008", 50, 26, "#F5E6C8", "#C4A87A");
-    insert.run("Emerald Night", "color", "#061210", 52, 28, "#E0F0E8", "#7ABAAA");
-    insert.run("Royal Purple", "color", "#10081a", 50, 26, "#F0E8F5", "#B09AC4");
-    insert.run("Pure White", "color", "#F5F3EE", 50, 26, "#1A1A2E", "#555555");
-    insert.run("Warm Charcoal", "color", "#1C1C1C", 52, 28, "#F8F0E0", "#A09888");
-    insert.run("Ocean Deep", "color", "#081418", 50, 26, "#D8F0F0", "#68A0A8");
+    insert.run("Classic Dark", "color", "#0a0a14", 52, 34, "#FFFFFF", "#C8C0B0");
+    insert.run("Midnight Blue", "color", "#0a1628", 52, 34, "#E8E4DC", "#8899AA");
+    insert.run("Desert Sand", "color", "#1a1008", 50, 32, "#F5E6C8", "#C4A87A");
+    insert.run("Emerald Night", "color", "#061210", 52, 34, "#E0F0E8", "#7ABAAA");
+    insert.run("Royal Purple", "color", "#10081a", 50, 32, "#F0E8F5", "#B09AC4");
+    insert.run("Pure White", "color", "#F5F3EE", 50, 32, "#1A1A2E", "#555555");
+    insert.run("Warm Charcoal", "color", "#1C1C1C", 52, 34, "#F8F0E0", "#A09888");
+    insert.run("Ocean Deep", "color", "#081418", 50, 32, "#D8F0F0", "#68A0A8");
     // New templates
-    insert.run("Crimson Dusk", "color", "#1a0808", 52, 28, "#FFE8E0", "#D4908A");
-    insert.run("Ivory Parchment", "color", "#F0E8D8", 50, 26, "#2A1A0A", "#7A6A4A");
-    insert.run("Obsidian", "color", "#0A0A0A", 54, 30, "#FFFFFF", "#888888");
-    insert.run("Forest Canopy", "color", "#0A1A0A", 50, 26, "#E0F0D8", "#8AB878");
-    insert.run("Amber Glow", "color", "#1A1000", 52, 28, "#FFE8B0", "#E0A030");
-    insert.run("Slate Blue", "color", "#1A1E28", 50, 26, "#E0E8F0", "#7890B0");
-    insert.run("Rose Gold", "color", "#1A1018", 52, 28, "#FFE8F0", "#D4A0B8");
-    insert.run("Moonlight", "color", "#14141E", 50, 26, "#F0F0FF", "#A0A0D0");
+    insert.run("Crimson Dusk", "color", "#1a0808", 52, 34, "#FFE8E0", "#D4908A");
+    insert.run("Ivory Parchment", "color", "#F0E8D8", 50, 32, "#2A1A0A", "#7A6A4A");
+    insert.run("Obsidian", "color", "#0A0A0A", 54, 36, "#FFFFFF", "#888888");
+    insert.run("Forest Canopy", "color", "#0A1A0A", 50, 32, "#E0F0D8", "#8AB878");
+    insert.run("Amber Glow", "color", "#1A1000", 52, 34, "#FFE8B0", "#E0A030");
+    insert.run("Slate Blue", "color", "#1A1E28", 50, 32, "#E0E8F0", "#7890B0");
+    insert.run("Rose Gold", "color", "#1A1018", 52, 34, "#FFE8F0", "#D4A0B8");
+    insert.run("Moonlight", "color", "#14141E", 50, 32, "#F0F0FF", "#A0A0D0");
     // Minimalist templates
-    insert.run("Minimal Snow", "color", "#FAFAFA", 46, 24, "#1A1A1A", "#999999");
-    insert.run("Minimal Ink", "color", "#111111", 46, 24, "#EEEEEE", "#666666");
-    insert.run("Minimal Stone", "color", "#E8E4E0", 46, 24, "#333333", "#888880");
-    insert.run("Minimal Fog", "color", "#D0D4D8", 46, 24, "#1A1E22", "#606870");
-    insert.run("Minimal Cloud", "color", "#F0F4F8", 46, 24, "#2A3040", "#8090A0");
-    insert.run("Minimal Sand", "color", "#EAE0D0", 46, 24, "#2A2218", "#908068");
-    insert.run("Minimal Ash", "color", "#282828", 46, 24, "#D8D8D8", "#707070");
-    insert.run("Minimal Pearl", "color", "#F8F0F4", 46, 24, "#2A1A22", "#907080");
+    insert.run("Minimal Snow", "color", "#FAFAFA", 46, 30, "#1A1A1A", "#999999");
+    insert.run("Minimal Ink", "color", "#111111", 46, 30, "#EEEEEE", "#666666");
+    insert.run("Minimal Stone", "color", "#E8E4E0", 46, 30, "#333333", "#888880");
+    insert.run("Minimal Fog", "color", "#D0D4D8", 46, 30, "#1A1E22", "#606870");
+    insert.run("Minimal Cloud", "color", "#F0F4F8", 46, 30, "#2A3040", "#8090A0");
+    insert.run("Minimal Sand", "color", "#EAE0D0", 46, 30, "#2A2218", "#908068");
+    insert.run("Minimal Ash", "color", "#282828", 46, 30, "#D8D8D8", "#707070");
+    insert.run("Minimal Pearl", "color", "#F8F0F4", 46, 30, "#2A1A22", "#907080");
   }
 }
 
@@ -219,7 +219,7 @@ export function updateRenderJob(
   if (updates.status !== undefined) {
     sets.push("status = ?");
     values.push(updates.status);
-    if (updates.status === "completed" || updates.status === "failed") {
+    if (updates.status === "completed" || updates.status === "failed" || updates.status === "cancelled") {
       sets.push("completed_at = datetime('now')");
     }
   }

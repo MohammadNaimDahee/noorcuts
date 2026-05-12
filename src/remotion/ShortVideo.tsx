@@ -533,7 +533,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
     : "";
 
   const activeIndex = timestamps.findIndex(
-    (ts) => currentTimeMs >= ts.startMs && currentTimeMs < ts.endMs,
+    (ts) => currentTimeMs >= ts.startMs && currentTimeMs <= ts.endMs,
   );
   const activeAyah = activeIndex >= 0 ? ayahs[activeIndex] : null;
   const activeTimestamp = activeIndex >= 0 ? timestamps[activeIndex] : null;
@@ -1147,7 +1147,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
           <div
             style={{
               color: effectiveTranslationColor,
-              fontSize: (translationFontSize || 28) * scaleFactor,
+              fontSize: (translationFontSize || 32) * scaleFactor,
               fontFamily: "'Cormorant Garamond', Georgia, serif",
               textAlign: "center",
               lineHeight: 1.9,

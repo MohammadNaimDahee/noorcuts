@@ -62,6 +62,7 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [rendering, setRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderStage, setRenderStage] = useState("");
+  const [renderJobId, setRenderJobId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -299,6 +300,7 @@ export function Dashboard({ projectId }: DashboardProps) {
     setRendering(true);
     setRenderProgress(0);
     setRenderStage("Starting...");
+    setRenderJobId(null);
     setError(null);
     setSuccess(null);
     setDownloadUrl(null);
@@ -355,14 +357,19 @@ export function Dashboard({ projectId }: DashboardProps) {
             if (event.type === "progress") {
               setRenderProgress(event.progress);
               setRenderStage(event.stage);
+              if (event.jobId) setRenderJobId(event.jobId);
             } else if (event.type === "complete") {
               setSuccess(`Render complete! Job #${event.jobId}`);
+              setRenderJobId(null);
               if (event.downloadUrl) {
                 setDownloadUrl(event.downloadUrl);
                 setPlayUrl(event.downloadUrl);
               }
               const histRes = await fetch(`/api/render?projectId=${projectId}`);
               setRenderHistory(await histRes.json());
+            } else if (event.type === "cancelled") {
+              setError("Render cancelled");
+              setRenderJobId(null);
             } else if (event.type === "error") {
               throw new Error(event.error);
             }
@@ -378,6 +385,20 @@ export function Dashboard({ projectId }: DashboardProps) {
       setRendering(false);
       setRenderProgress(0);
       setRenderStage("");
+      setRenderJobId(null);
+    }
+  };
+
+  const handleCancelRender = async () => {
+    if (!renderJobId) return;
+    try {
+      await fetch("/api/render/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: renderJobId }),
+      });
+    } catch {
+      /* ignore */
     }
   };
 
@@ -555,6 +576,18 @@ export function Dashboard({ projectId }: DashboardProps) {
               </>
             )}
           </button>
+          {rendering && (
+            <button
+              onClick={handleCancelRender}
+              className="flex items-center gap-1.5 rounded-md bg-red-600/80 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-500"
+              title="Cancel render"
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Cancel
+            </button>
+          )}
           <UserButton
             appearance={{
               elements: { avatarBox: "h-7 w-7" },

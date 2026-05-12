@@ -88,6 +88,8 @@ export interface QfWord {
   position: number;
   audio_url: string;
   char_type_name: string;
+  text_uthmani?: string;
+  text?: string;
   translation: { text: string; language_name: string };
   transliteration: { text: string; language_name: string };
 }
@@ -118,6 +120,8 @@ export async function getVersesByChapter(
     language?: string;
     words?: boolean;
     fields?: string;
+    translationFields?: string;
+    wordFields?: string;
   }
 ): Promise<{ verses: QfVerse[]; pagination: { per_page: number; current_page: number; next_page: number | null; total_pages: number; total_records: number } }> {
   const params = new URLSearchParams();
@@ -127,6 +131,8 @@ export async function getVersesByChapter(
   if (options?.language) params.set("language", options.language);
   if (options?.words !== undefined) params.set("words", String(options.words));
   if (options?.fields) params.set("fields", options.fields);
+  if (options?.translationFields) params.set("translation_fields", options.translationFields);
+  if (options?.wordFields) params.set("word_fields", options.wordFields);
 
   const query = params.toString() ? `?${params.toString()}` : "";
   const res = await qfContentFetch(`/content/api/v4/verses/by_chapter/${chapterNumber}${query}`);
@@ -134,10 +140,40 @@ export async function getVersesByChapter(
   return res.json();
 }
 
+/**
+ * Fetch translations from the PUBLIC Quran.com API (not authenticated).
+ * The authenticated content API on prelive does not return translations,
+ * so we fall back to the public API which always works.
+ */
+async function fetchPublicTranslations(
+  chapterNumber: number,
+  translationId: string = "20"
+): Promise<Map<string, string>> {
+  const translationMap = new Map<string, string>();
+  let page = 1;
+
+  while (true) {
+    const res = await fetch(
+      `https://api.quran.com/api/v4/verses/by_chapter/${chapterNumber}?translations=${translationId}&translation_fields=text&fields=verse_key&per_page=50&page=${page}`
+    );
+    if (!res.ok) break;
+    const data = await res.json();
+    for (const v of data.verses) {
+      if (v.translations?.[0]?.text) {
+        translationMap.set(v.verse_key, v.translations[0].text);
+      }
+    }
+    if (!data.pagination.next_page) break;
+    page = data.pagination.next_page;
+  }
+
+  return translationMap;
+}
+
 // Fetch ALL verses for a chapter (handles pagination)
 export async function getAllVersesByChapter(
   chapterNumber: number,
-  translations: string = "131" // 131 = Sahih International
+  translations: string = "20" // 20 = Saheeh International
 ): Promise<QfVerse[]> {
   const allVerses: QfVerse[] = [];
   let page = 1;
@@ -149,11 +185,27 @@ export async function getAllVersesByChapter(
       translations,
       words: true,
       fields: "text_uthmani,text_imlaei_simple",
+      translationFields: "text",
+      wordFields: "text_uthmani,text,char_type_name",
     });
     allVerses.push(...data.verses);
 
     if (!data.pagination.next_page) break;
     page = data.pagination.next_page;
+  }
+
+  // If authenticated API didn't return translations, fetch from public API
+  const missingTranslations = allVerses.some((v) => !v.translations?.length);
+  if (missingTranslations) {
+    const publicTranslations = await fetchPublicTranslations(chapterNumber, translations);
+    for (const verse of allVerses) {
+      if (!verse.translations?.length) {
+        const text = publicTranslations.get(verse.verse_key);
+        if (text) {
+          verse.translations = [{ resource_id: Number(translations), text }];
+        }
+      }
+    }
   }
 
   return allVerses;
@@ -179,16 +231,27 @@ export async function getRecitations(language?: string): Promise<QfRecitation[]>
 export interface QfAudioFile {
   verse_key: string;
   url: string;
+  segments?: number[][];
 }
 
 export async function getRecitationAudioFiles(
   recitationId: number,
   chapterNumber: number
 ): Promise<QfAudioFile[]> {
-  const res = await qfContentFetch(`/content/api/v4/recitations/${recitationId}/by_chapter/${chapterNumber}`);
-  if (!res.ok) throw new Error(`Failed to fetch audio files: ${res.status}`);
-  const data = await res.json();
-  return data.audio_files;
+  const allFiles: QfAudioFile[] = [];
+  let page = 1;
+
+  while (true) {
+    const res = await qfContentFetch(`/content/api/v4/recitations/${recitationId}/by_chapter/${chapterNumber}?fields=segments&per_page=50&page=${page}`);
+    if (!res.ok) throw new Error(`Failed to fetch audio files: ${res.status}`);
+    const data = await res.json();
+    allFiles.push(...data.audio_files);
+
+    if (!data.pagination?.next_page) break;
+    page = data.pagination.next_page;
+  }
+
+  return allFiles;
 }
 
 export interface QfTimestamp {

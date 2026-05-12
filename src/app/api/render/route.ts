@@ -45,8 +45,8 @@ export async function POST(request: Request): Promise<Response> {
         surahIntro || false,
         userId,
         projectId,
-        async (stage, progress) => {
-          await sendEvent({ type: "progress", stage, progress });
+        async (stage, progress, jobId) => {
+          await sendEvent({ type: "progress", stage, progress, jobId });
         },
         dataSource || "local"
       );
@@ -55,7 +55,8 @@ export async function POST(request: Request): Promise<Response> {
       await sendEvent({ type: "complete", jobId: result.jobId, downloadUrl });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Render failed";
-      await sendEvent({ type: "error", error: message });
+      const isCancelled = message.includes("cancelled") || message.includes("Cancel");
+      await sendEvent({ type: isCancelled ? "cancelled" : "error", error: message });
     } finally {
       await writer.close();
     }

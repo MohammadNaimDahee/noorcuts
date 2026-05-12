@@ -4,7 +4,7 @@ import { getAllVersesByChapter } from "@/lib/qf-content";
 export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const chapter = searchParams.get("chapter");
-  const translations = searchParams.get("translations") || "131"; // 131 = Sahih International
+  const translations = searchParams.get("translations") || "20"; // 20 = Saheeh International
 
   if (!chapter) {
     return NextResponse.json({ error: "Missing chapter parameter" }, { status: 400 });

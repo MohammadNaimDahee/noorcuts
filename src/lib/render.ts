@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { bundle } from "@remotion/bundler";
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
 import {
   isSurahLevelReciter,
   getSurahLevelTimestamps,
@@ -20,7 +20,7 @@ import {
 } from "@/lib/ffmpeg";
 import type { VideoCompositionProps, VideoFormat, AyahTimestamp, AyahWordTimings, BackgroundVideo, ArabicFontId, TransitionEffect, SurahMeta, DataSource } from "@/types";
 import { ARABIC_FONTS } from "@/types";
-import { updateRenderProgress } from "@/lib/render-progress";
+import { updateRenderProgress, registerCancelController } from "@/lib/render-progress";
 import { getChapters } from "@/lib/qf-content";
 import { fetchAyahData } from "@/lib/qf-data";
 
@@ -28,7 +28,7 @@ const OUTPUT_DIR = path.join(process.cwd(), "output");
 const TEMP_DIR = path.join(process.cwd(), "output", ".tmp");
 const REMOTION_ENTRY = path.join(process.cwd(), "src", "remotion", "index.ts");
 
-export type RenderProgressCallback = (stage: string, progress: number) => void;
+export type RenderProgressCallback = (stage: string, progress: number, jobId: number) => void;
 
 export async function triggerRender(
   surah: number,
@@ -57,9 +57,21 @@ export async function triggerRender(
   updateRenderJob(jobId, { status: "rendering" });
   updateRenderProgress(jobId, { stage: "Starting", progress: 0, status: "rendering", jobId });
 
+  // Cancel support
+  const abortController = new AbortController();
+  registerCancelController(jobId, abortController);
+  const { cancelSignal, cancel: remotionCancel } = makeCancelSignal();
+  abortController.signal.addEventListener("abort", () => remotionCancel());
+
+  const checkCancelled = () => {
+    if (abortController.signal.aborted) {
+      throw new Error("Render cancelled by user");
+    }
+  };
+
   const emitProgress = (stage: string, progress: number) => {
     updateRenderProgress(jobId, { stage, progress, status: "rendering" });
-    onProgress?.(stage, progress);
+    onProgress?.(stage, progress, jobId);
   };
 
   const jobTempDir = path.join(TEMP_DIR, `job-${jobId}`);
@@ -68,6 +80,7 @@ export async function triggerRender(
   try {
     // Gather data
     emitProgress("Gathering ayah data", 0);
+    checkCancelled();
     const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource);
 
     const template = getTemplate(templateId);
@@ -230,6 +243,7 @@ export async function triggerRender(
     composition.durationInFrames = totalDurationFrames;
 
     emitProgress("Rendering video", 35);
+    checkCancelled();
     const silentVideoPath = path.join(jobTempDir, "video-silent.mp4");
     await renderMedia({
       composition,
@@ -237,6 +251,7 @@ export async function triggerRender(
       codec: "h264",
       outputLocation: silentVideoPath,
       inputProps: inputProps as unknown as Record<string, unknown>,
+      cancelSignal,
       onProgress: ({ progress }) => {
         // Rendering is 35-90% of total progress
         const pct = 35 + Math.round(progress * 55);
@@ -276,8 +291,10 @@ export async function triggerRender(
     cleanupTempDir(jobTempDir);
     cleanupTempDir(bgVideoPublicDir);
     const message = err instanceof Error ? err.message : "Unknown render error";
-    updateRenderProgress(jobId, { status: "failed", error: message, stage: "Failed" });
-    updateRenderJob(jobId, { status: "failed", errorMessage: message });
+    const isCancelled = abortController.signal.aborted || message.includes("cancelled");
+    const status = isCancelled ? "cancelled" : "failed";
+    updateRenderProgress(jobId, { status, error: message, stage: isCancelled ? "Cancelled" : "Failed" });
+    updateRenderJob(jobId, { status, errorMessage: message });
     throw err;
   }
 }
