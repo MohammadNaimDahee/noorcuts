@@ -1,17 +1,33 @@
 import path from "path";
 import fs from "fs";
-import { sql } from "@vercel/postgres";
+import { Pool } from "pg";
 import type { Template, RenderJob } from "@/types";
 import type { Project, TransitionEffect } from "@/types";
 
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 
 let migrated = false;
+let pool: Pool | null = null;
+
+function getPool(): Pool {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.POSTGRES_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+  }
+  return pool;
+}
+
+async function query(text: string, params?: unknown[]) {
+  const client = getPool();
+  return client.query(text, params);
+}
 
 async function runMigrations(): Promise<void> {
   if (migrated) return;
 
-  await sql`
+  await query(`
     CREATE TABLE IF NOT EXISTS templates (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -24,9 +40,9 @@ async function runMigrations(): Promise<void> {
       translation_color TEXT NOT NULL DEFAULT '#CCCCCC',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
-  await sql`
+  await query(`
     CREATE TABLE IF NOT EXISTS projects (
       id SERIAL PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -48,9 +64,9 @@ async function runMigrations(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
-  await sql`
+  await query(`
     CREATE TABLE IF NOT EXISTS render_history (
       id SERIAL PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT '',
@@ -67,16 +83,16 @@ async function runMigrations(): Promise<void> {
       completed_at TIMESTAMPTZ,
       expires_at TIMESTAMPTZ
     )
-  `;
+  `);
 
   // Mark any stale "rendering" jobs as failed (server restarted while they were running)
-  await sql`
+  await query(`
     UPDATE render_history SET status = 'failed', error_message = 'Server restarted during render'
     WHERE status = 'rendering'
-  `;
+  `);
 
   // Insert default templates if none exist
-  const { rows } = await sql`SELECT COUNT(*) as count FROM templates`;
+  const { rows } = await query(`SELECT COUNT(*) as count FROM templates`);
   if (Number(rows[0].count) === 0) {
     const templates = [
       ["Classic Dark", "color", "#0a0a14", 52, 34, "#FFFFFF", "#C8C0B0"],
@@ -106,10 +122,11 @@ async function runMigrations(): Promise<void> {
     ];
 
     for (const [name, bgType, bgColor, arabicSize, transSize, arabicColor, transColor] of templates) {
-      await sql`
-        INSERT INTO templates (name, background_type, background_color, arabic_font_size, translation_font_size, arabic_color, translation_color)
-        VALUES (${name as string}, ${bgType as string}, ${bgColor as string}, ${arabicSize as number}, ${transSize as number}, ${arabicColor as string}, ${transColor as string})
-      `;
+      await query(
+        `INSERT INTO templates (name, background_type, background_color, arabic_font_size, translation_font_size, arabic_color, translation_color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [name, bgType, bgColor, arabicSize, transSize, arabicColor, transColor]
+      );
     }
   }
 
@@ -125,13 +142,13 @@ async function ensureDb(): Promise<void> {
 
 export async function getTemplates(): Promise<Template[]> {
   await ensureDb();
-  const { rows } = await sql`SELECT * FROM templates ORDER BY id`;
+  const { rows } = await query(`SELECT * FROM templates ORDER BY id`);
   return rows.map(rowToTemplate);
 }
 
 export async function getTemplate(id: number): Promise<Template | null> {
   await ensureDb();
-  const { rows } = await sql`SELECT * FROM templates WHERE id = ${id}`;
+  const { rows } = await query(`SELECT * FROM templates WHERE id = $1`, [id]);
   return rows.length > 0 ? rowToTemplate(rows[0]) : null;
 }
 
@@ -164,11 +181,12 @@ export async function createRenderJob(
   await ensureDb();
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const pid = projectId ?? null;
-  const { rows } = await sql`
-    INSERT INTO render_history (user_id, project_id, surah, ayah_start, ayah_end, reciter_id, template_id, status, expires_at)
-    VALUES (${userId}, ${pid}, ${surah}, ${ayahStart}, ${ayahEnd}, ${reciterId}, ${templateId}, 'pending', ${expiresAt})
-    RETURNING id
-  `;
+  const { rows } = await query(
+    `INSERT INTO render_history (user_id, project_id, surah, ayah_start, ayah_end, reciter_id, template_id, status, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+     RETURNING id`,
+    [userId, pid, surah, ayahStart, ayahEnd, reciterId, templateId, expiresAt]
+  );
   return rows[0].id as number;
 }
 
@@ -198,31 +216,25 @@ export async function updateRenderJob(
   }
 
   values.push(id);
-  const query = `UPDATE render_history SET ${sets.join(", ")} WHERE id = $${paramIdx}`;
-  // Use raw query for dynamic SQL
-  const { Pool } = await import("@vercel/postgres");
-  const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
-  try {
-    await pool.query(query, values);
-  } finally {
-    await pool.end();
-  }
+  await query(`UPDATE render_history SET ${sets.join(", ")} WHERE id = $${paramIdx}`, values);
 }
 
 export async function getRenderHistory(userId: string, projectId?: number): Promise<RenderJob[]> {
   await ensureDb();
   let rows;
   if (projectId !== undefined) {
-    const result = await sql`
-      SELECT * FROM render_history WHERE user_id = ${userId} AND project_id = ${projectId}
-      ORDER BY created_at DESC LIMIT 50
-    `;
+    const result = await query(
+      `SELECT * FROM render_history WHERE user_id = $1 AND project_id = $2
+       ORDER BY created_at DESC LIMIT 50`,
+      [userId, projectId]
+    );
     rows = result.rows;
   } else {
-    const result = await sql`
-      SELECT * FROM render_history WHERE user_id = ${userId}
-      ORDER BY created_at DESC LIMIT 50
-    `;
+    const result = await query(
+      `SELECT * FROM render_history WHERE user_id = $1
+       ORDER BY created_at DESC LIMIT 50`,
+      [userId]
+    );
     rows = result.rows;
   }
   return rows.map(rowToRenderJob);
@@ -252,23 +264,30 @@ export async function createProject(userId: string, name: string, description?: 
   await ensureDb();
   const desc = description || "";
   const ds = dataSource || "local";
-  const { rows } = await sql`
-    INSERT INTO projects (user_id, name, description, data_source)
-    VALUES (${userId}, ${name}, ${desc}, ${ds})
-    RETURNING id
-  `;
+  const { rows } = await query(
+    `INSERT INTO projects (user_id, name, description, data_source)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id`,
+    [userId, name, desc, ds]
+  );
   return rows[0].id as number;
 }
 
 export async function getProjects(userId: string): Promise<Project[]> {
   await ensureDb();
-  const { rows } = await sql`SELECT * FROM projects WHERE user_id = ${userId} ORDER BY updated_at DESC`;
+  const { rows } = await query(
+    `SELECT * FROM projects WHERE user_id = $1 ORDER BY updated_at DESC`,
+    [userId]
+  );
   return rows.map(rowToProject);
 }
 
 export async function getProject(id: number, userId: string): Promise<Project | null> {
   await ensureDb();
-  const { rows } = await sql`SELECT * FROM projects WHERE id = ${id} AND user_id = ${userId}`;
+  const { rows } = await query(
+    `SELECT * FROM projects WHERE id = $1 AND user_id = $2`,
+    [id, userId]
+  );
   return rows.length > 0 ? rowToProject(rows[0]) : null;
 }
 
@@ -299,19 +318,14 @@ export async function updateProject(
   if (updates.dataSource !== undefined) { sets.push(`data_source = $${paramIdx++}`); values.push(updates.dataSource); }
 
   values.push(id, userId);
-  const query = `UPDATE projects SET ${sets.join(", ")} WHERE id = $${paramIdx++} AND user_id = $${paramIdx}`;
-  const { Pool } = await import("@vercel/postgres");
-  const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
-  try {
-    await pool.query(query, values);
-  } finally {
-    await pool.end();
-  }
+  const idIdx = paramIdx++;
+  const userIdx = paramIdx;
+  await query(`UPDATE projects SET ${sets.join(", ")} WHERE id = $${idIdx} AND user_id = $${userIdx}`, values);
 }
 
 export async function deleteProject(id: number, userId: string): Promise<void> {
   await ensureDb();
-  await sql`DELETE FROM projects WHERE id = ${id} AND user_id = ${userId}`;
+  await query(`DELETE FROM projects WHERE id = $1 AND user_id = $2`, [id, userId]);
 }
 
 function rowToProject(row: Record<string, unknown>): Project {
@@ -343,10 +357,11 @@ function rowToProject(row: Record<string, unknown>): Project {
 export async function cleanupExpiredRenders(): Promise<number> {
   await ensureDb();
   const now = new Date().toISOString();
-  const { rows: expired } = await sql`
-    SELECT id, output_path, user_id FROM render_history
-    WHERE expires_at IS NOT NULL AND expires_at < ${now} AND output_path IS NOT NULL
-  `;
+  const { rows: expired } = await query(
+    `SELECT id, output_path, user_id FROM render_history
+     WHERE expires_at IS NOT NULL AND expires_at < $1 AND output_path IS NOT NULL`,
+    [now]
+  );
 
   let cleaned = 0;
   for (const row of expired) {
@@ -359,7 +374,7 @@ export async function cleanupExpiredRenders(): Promise<number> {
         // ignore file delete errors
       }
     }
-    await sql`UPDATE render_history SET status = 'expired', output_path = NULL WHERE id = ${row.id as number}`;
+    await query(`UPDATE render_history SET status = 'expired', output_path = NULL WHERE id = $1`, [row.id]);
   }
 
   // Clean up empty user directories
