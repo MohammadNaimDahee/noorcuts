@@ -51,7 +51,7 @@ export interface RenderJob {
   ayahEnd: number;
   reciterId: string;
   templateId: number;
-  status: "pending" | "rendering" | "completed" | "failed" | "expired";
+  status: "pending" | "rendering" | "completed" | "failed" | "expired" | "cancelled";
   outputPath: string | null;
   errorMessage: string | null;
   createdAt: string;

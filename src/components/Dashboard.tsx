@@ -56,6 +56,11 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [tixslyLoading, setTixslyLoading] = useState(false);
   const [tixslyResult, setTixslyResult] = useState<string | null>(null);
 
+  // Quran.com OAuth state
+  const [qfConnected, setQfConnected] = useState(false);
+  const [qfBookmarks, setQfBookmarks] = useState<Array<{ id: string; surah: number; ayah: number; createdAt: string }>>([]);
+  const [qfBookmarksLoading, setQfBookmarksLoading] = useState(false);
+
   // UI state
   const [leftTab, setLeftTab] = useState<LeftTab>("source");
   const [preview, setPreview] = useState<Ayah[]>([]);
@@ -152,6 +157,58 @@ export function Dashboard({ projectId }: DashboardProps) {
       setProjectLoading(false);
     });
   }, [projectId, router]);
+
+  // Check Quran.com connection status
+  useEffect(() => {
+    fetch("/api/auth/qf/status").then((r) => r.json()).then((d) => {
+      setQfConnected(d.connected === true);
+    }).catch(() => setQfConnected(false));
+
+    // Handle OAuth callback redirect
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("qf_connected") === "true") {
+      setQfConnected(true);
+      // Clean up URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete("qf_connected");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+    if (params.get("qf_error")) {
+      setError(`Quran.com login failed: ${params.get("qf_error")}`);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("qf_error");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  }, []);
+
+  // Fetch bookmarks when connected
+  const fetchBookmarks = useCallback(async () => {
+    if (!qfConnected) return;
+    setQfBookmarksLoading(true);
+    try {
+      const res = await fetch("/api/qf/bookmarks?type=ayah&mushafId=1&first=50");
+      if (!res.ok) {
+        if (res.status === 401) setQfConnected(false);
+        return;
+      }
+      const data = await res.json();
+      const bookmarks = (data.data || []).map((b: { id: string; key: number; verseNumber: number; createdAt: string }) => ({
+        id: b.id,
+        surah: b.key,
+        ayah: b.verseNumber,
+        createdAt: b.createdAt,
+      }));
+      setQfBookmarks(bookmarks);
+    } catch (err) {
+      console.error("Failed to fetch bookmarks:", err);
+    } finally {
+      setQfBookmarksLoading(false);
+    }
+  }, [qfConnected]);
+
+  useEffect(() => {
+    fetchBookmarks();
+  }, [fetchBookmarks]);
 
   useEffect(() => {
     if (projectLoading) return;
@@ -527,7 +584,19 @@ export function Dashboard({ projectId }: DashboardProps) {
           <div className="h-4 w-px bg-[#2a2a4a]" />
           <span className="text-xs font-medium text-zinc-300">{project?.name}</span>
           {project?.dataSource === "quran.com" && (
-            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">Quran.com</span>
+            qfConnected ? (
+              <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">Quran.com</span>
+            ) : (
+              <a
+                href="/api/auth/qf/login"
+                className="flex items-center gap-1 rounded bg-teal-600/20 px-2 py-0.5 text-[9px] font-medium text-teal-300 hover:bg-teal-600/30 transition-colors"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                Sign in with Quran.com
+              </a>
+            )
           )}
           <button
             onClick={handleSaveProject}
@@ -738,6 +807,63 @@ export function Dashboard({ projectId }: DashboardProps) {
                     </div>
                   )}
                 </div>
+
+                {/* BOOKMARKS */}
+                {project?.dataSource === "quran.com" && (
+                  <div className="border-t border-[#2a2a4a] pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Bookmarks</h3>
+                      {qfConnected ? (
+                        <button
+                          onClick={fetchBookmarks}
+                          disabled={qfBookmarksLoading}
+                          className="text-[9px] text-teal-400 hover:text-teal-300 disabled:opacity-40"
+                        >
+                          {qfBookmarksLoading ? "Loading..." : "Refresh"}
+                        </button>
+                      ) : (
+                        <a
+                          href="/api/auth/qf/login"
+                          className="text-[9px] text-teal-400 hover:text-teal-300"
+                        >
+                          Sign in
+                        </a>
+                      )}
+                    </div>
+                    {!qfConnected ? (
+                      <p className="text-[9px] text-zinc-600">Sign in with Quran.com to import your bookmarked ayahs as clip suggestions</p>
+                    ) : qfBookmarks.length === 0 ? (
+                      <p className="text-[9px] text-zinc-600">{qfBookmarksLoading ? "Loading bookmarks..." : "No bookmarks found"}</p>
+                    ) : (
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {qfBookmarks.map((bm) => {
+                          const surahInfo = surahs.find((s) => s.id === bm.surah);
+                          return (
+                            <button
+                              key={bm.id}
+                              onClick={() => {
+                                setSelectedSurah(bm.surah);
+                                setAyahStart(bm.ayah);
+                                setAyahEnd(Math.min(bm.ayah + 4, surahInfo?.totalVerses || bm.ayah));
+                              }}
+                              className="flex w-full items-center justify-between rounded-md bg-[#0f0f20] px-2.5 py-1.5 text-left hover:bg-[#1a1a3a] transition-colors"
+                            >
+                              <div>
+                                <span className="text-[10px] text-zinc-300">
+                                  {bm.surah}:{bm.ayah}
+                                </span>
+                                {surahInfo && (
+                                  <span className="ml-1.5 text-[9px] text-zinc-600">{surahInfo.nameEn}</span>
+                                )}
+                              </div>
+                              <span className="text-[9px] text-teal-400 shrink-0">Use</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

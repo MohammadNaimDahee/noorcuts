@@ -53,8 +53,8 @@ export async function triggerRender(
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  const jobId = createRenderJob(surah, ayahStart, ayahEnd, reciterId, templateId, userId, projectId);
-  updateRenderJob(jobId, { status: "rendering" });
+  const jobId = await createRenderJob(surah, ayahStart, ayahEnd, reciterId, templateId, userId, projectId);
+  await updateRenderJob(jobId, { status: "rendering" });
   updateRenderProgress(jobId, { stage: "Starting", progress: 0, status: "rendering", jobId });
 
   // Cancel support
@@ -83,7 +83,7 @@ export async function triggerRender(
     checkCancelled();
     const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource);
 
-    const template = getTemplate(templateId);
+    const template = await getTemplate(templateId);
     if (!template) throw new Error(`Template ${templateId} not found`);
 
     let timestamps: AyahTimestamp[];
@@ -285,7 +285,7 @@ export async function triggerRender(
 
     emitProgress("Complete", 100);
     updateRenderProgress(jobId, { status: "completed", progress: 100, stage: "Complete" });
-    updateRenderJob(jobId, { status: "completed", outputPath: finalOutputPath });
+    await updateRenderJob(jobId, { status: "completed", outputPath: finalOutputPath });
     return { jobId, outputPath: finalOutputPath };
   } catch (err) {
     cleanupTempDir(jobTempDir);
@@ -294,7 +294,7 @@ export async function triggerRender(
     const isCancelled = abortController.signal.aborted || message.includes("cancelled");
     const status = isCancelled ? "cancelled" : "failed";
     updateRenderProgress(jobId, { status, error: message, stage: isCancelled ? "Cancelled" : "Failed" });
-    updateRenderJob(jobId, { status, errorMessage: message });
+    await updateRenderJob(jobId, { status, errorMessage: message });
     throw err;
   }
 }

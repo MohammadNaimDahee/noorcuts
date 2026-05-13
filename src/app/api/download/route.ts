@@ -23,7 +23,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const filePath = path.join(process.cwd(), "output", userId, basename);
 
   // Verify the user owns this render
-  const history = getRenderHistory(userId);
+  const history = await getRenderHistory(userId);
   const ownsFile = history.some(
     (job) => job.outputPath && path.basename(job.outputPath) === basename
   );

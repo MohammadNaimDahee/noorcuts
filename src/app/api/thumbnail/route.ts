@@ -61,7 +61,7 @@ export async function POST(request: Request): Promise<Response> {
 
     const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource);
 
-    const template = getTemplate(templateId);
+    const template = await getTemplate(templateId);
     if (!template) {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
     }

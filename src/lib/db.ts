@@ -1,30 +1,19 @@
 import path from "path";
 import fs from "fs";
+import { sql } from "@vercel/postgres";
 import type { Template, RenderJob } from "@/types";
 import type { Project, TransitionEffect } from "@/types";
 
-const DB_PATH = path.join(process.cwd(), "noorcuts.db");
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let db: any = null;
+let migrated = false;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getDb(): any {
-  if (db) return db;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
-  db = new Database(DB_PATH);
-  db.pragma("journal_mode = WAL");
-  runMigrations(db);
-  return db;
-}
+async function runMigrations(): Promise<void> {
+  if (migrated) return;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function runMigrations(database: any): void {
-  database.exec(`
+  await sql`
     CREATE TABLE IF NOT EXISTS templates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       background_type TEXT NOT NULL DEFAULT 'color',
       background_color TEXT NOT NULL DEFAULT '#000000',
@@ -33,30 +22,13 @@ function runMigrations(database: any): void {
       translation_font_size INTEGER NOT NULL DEFAULT 32,
       arabic_color TEXT NOT NULL DEFAULT '#FFFFFF',
       translation_color TEXT NOT NULL DEFAULT '#CCCCCC',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
 
-    CREATE TABLE IF NOT EXISTS render_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL DEFAULT '',
-      project_id INTEGER,
-      surah INTEGER NOT NULL,
-      ayah_start INTEGER NOT NULL,
-      ayah_end INTEGER NOT NULL,
-      reciter_id TEXT NOT NULL,
-      template_id INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      output_path TEXT,
-      error_message TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      completed_at TEXT,
-      expires_at TEXT,
-      FOREIGN KEY (template_id) REFERENCES templates(id),
-      FOREIGN KEY (project_id) REFERENCES projects(id)
-    );
-
+  await sql`
     CREATE TABLE IF NOT EXISTS projects (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       user_id TEXT NOT NULL,
       name TEXT NOT NULL,
       description TEXT DEFAULT '',
@@ -67,109 +39,100 @@ function runMigrations(database: any): void {
       template_id INTEGER,
       format TEXT DEFAULT 'vertical',
       arabic_font TEXT DEFAULT 'amiri-quran',
-      word_highlight INTEGER DEFAULT 0,
-      audio_waveform INTEGER DEFAULT 0,
+      word_highlight BOOLEAN DEFAULT false,
+      audio_waveform BOOLEAN DEFAULT false,
       transition_effect TEXT DEFAULT 'none',
-      calligraphy_entrance INTEGER DEFAULT 0,
-      surah_intro INTEGER DEFAULT 0,
+      calligraphy_entrance BOOLEAN DEFAULT false,
+      surah_intro BOOLEAN DEFAULT false,
       data_source TEXT DEFAULT 'local',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
 
-  // Migrations for existing DBs
-  const rhCols = database.prepare("PRAGMA table_info(render_history)").all() as Array<{ name: string }>;
-  if (!rhCols.some((c) => c.name === "user_id")) {
-    database.exec("ALTER TABLE render_history ADD COLUMN user_id TEXT NOT NULL DEFAULT ''");
-  }
-  if (!rhCols.some((c) => c.name === "project_id")) {
-    database.exec("ALTER TABLE render_history ADD COLUMN project_id INTEGER");
-  }
-  if (!rhCols.some((c) => c.name === "expires_at")) {
-    database.exec("ALTER TABLE render_history ADD COLUMN expires_at TEXT");
-  }
-
-  // Migrations for projects table
-  const pCols = database.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>;
-  if (!pCols.some((c) => c.name === "word_highlight")) {
-    database.exec("ALTER TABLE projects ADD COLUMN word_highlight INTEGER DEFAULT 0");
-  }
-  if (!pCols.some((c) => c.name === "audio_waveform")) {
-    database.exec("ALTER TABLE projects ADD COLUMN audio_waveform INTEGER DEFAULT 0");
-  }
-  if (!pCols.some((c) => c.name === "transition_effect")) {
-    database.exec("ALTER TABLE projects ADD COLUMN transition_effect TEXT DEFAULT 'none'");
-  }
-  if (!pCols.some((c) => c.name === "calligraphy_entrance")) {
-    database.exec("ALTER TABLE projects ADD COLUMN calligraphy_entrance INTEGER DEFAULT 0");
-  }
-  if (!pCols.some((c) => c.name === "surah_intro")) {
-    database.exec("ALTER TABLE projects ADD COLUMN surah_intro INTEGER DEFAULT 0");
-  }
-  if (!pCols.some((c) => c.name === "data_source")) {
-    database.exec("ALTER TABLE projects ADD COLUMN data_source TEXT DEFAULT 'local'");
-  }
+  await sql`
+    CREATE TABLE IF NOT EXISTS render_history (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+      surah INTEGER NOT NULL,
+      ayah_start INTEGER NOT NULL,
+      ayah_end INTEGER NOT NULL,
+      reciter_id TEXT NOT NULL,
+      template_id INTEGER NOT NULL REFERENCES templates(id),
+      status TEXT NOT NULL DEFAULT 'pending',
+      output_path TEXT,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ
+    )
+  `;
 
   // Mark any stale "rendering" jobs as failed (server restarted while they were running)
-  database.exec(
-    "UPDATE render_history SET status = 'failed', error_message = 'Server restarted during render' WHERE status = 'rendering'"
-  );
+  await sql`
+    UPDATE render_history SET status = 'failed', error_message = 'Server restarted during render'
+    WHERE status = 'rendering'
+  `;
 
   // Insert default templates if none exist
-  const count = database
-    .prepare("SELECT COUNT(*) as count FROM templates")
-    .get() as { count: number };
+  const { rows } = await sql`SELECT COUNT(*) as count FROM templates`;
+  if (Number(rows[0].count) === 0) {
+    const templates = [
+      ["Classic Dark", "color", "#0a0a14", 52, 34, "#FFFFFF", "#C8C0B0"],
+      ["Midnight Blue", "color", "#0a1628", 52, 34, "#E8E4DC", "#8899AA"],
+      ["Desert Sand", "color", "#1a1008", 50, 32, "#F5E6C8", "#C4A87A"],
+      ["Emerald Night", "color", "#061210", 52, 34, "#E0F0E8", "#7ABAAA"],
+      ["Royal Purple", "color", "#10081a", 50, 32, "#F0E8F5", "#B09AC4"],
+      ["Pure White", "color", "#F5F3EE", 50, 32, "#1A1A2E", "#555555"],
+      ["Warm Charcoal", "color", "#1C1C1C", 52, 34, "#F8F0E0", "#A09888"],
+      ["Ocean Deep", "color", "#081418", 50, 32, "#D8F0F0", "#68A0A8"],
+      ["Crimson Dusk", "color", "#1a0808", 52, 34, "#FFE8E0", "#D4908A"],
+      ["Ivory Parchment", "color", "#F0E8D8", 50, 32, "#2A1A0A", "#7A6A4A"],
+      ["Obsidian", "color", "#0A0A0A", 54, 36, "#FFFFFF", "#888888"],
+      ["Forest Canopy", "color", "#0A1A0A", 50, 32, "#E0F0D8", "#8AB878"],
+      ["Amber Glow", "color", "#1A1000", 52, 34, "#FFE8B0", "#E0A030"],
+      ["Slate Blue", "color", "#1A1E28", 50, 32, "#E0E8F0", "#7890B0"],
+      ["Rose Gold", "color", "#1A1018", 52, 34, "#FFE8F0", "#D4A0B8"],
+      ["Moonlight", "color", "#14141E", 50, 32, "#F0F0FF", "#A0A0D0"],
+      ["Minimal Snow", "color", "#FAFAFA", 46, 30, "#1A1A1A", "#999999"],
+      ["Minimal Ink", "color", "#111111", 46, 30, "#EEEEEE", "#666666"],
+      ["Minimal Stone", "color", "#E8E4E0", 46, 30, "#333333", "#888880"],
+      ["Minimal Fog", "color", "#D0D4D8", 46, 30, "#1A1E22", "#606870"],
+      ["Minimal Cloud", "color", "#F0F4F8", 46, 30, "#2A3040", "#8090A0"],
+      ["Minimal Sand", "color", "#EAE0D0", 46, 30, "#2A2218", "#908068"],
+      ["Minimal Ash", "color", "#282828", 46, 30, "#D8D8D8", "#707070"],
+      ["Minimal Pearl", "color", "#F8F0F4", 46, 30, "#2A1A22", "#907080"],
+    ];
 
-  if (count.count === 0) {
-    const insert = database.prepare(
-      `INSERT INTO templates (name, background_type, background_color, arabic_font_size, translation_font_size, arabic_color, translation_color)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-
-    insert.run("Classic Dark", "color", "#0a0a14", 52, 34, "#FFFFFF", "#C8C0B0");
-    insert.run("Midnight Blue", "color", "#0a1628", 52, 34, "#E8E4DC", "#8899AA");
-    insert.run("Desert Sand", "color", "#1a1008", 50, 32, "#F5E6C8", "#C4A87A");
-    insert.run("Emerald Night", "color", "#061210", 52, 34, "#E0F0E8", "#7ABAAA");
-    insert.run("Royal Purple", "color", "#10081a", 50, 32, "#F0E8F5", "#B09AC4");
-    insert.run("Pure White", "color", "#F5F3EE", 50, 32, "#1A1A2E", "#555555");
-    insert.run("Warm Charcoal", "color", "#1C1C1C", 52, 34, "#F8F0E0", "#A09888");
-    insert.run("Ocean Deep", "color", "#081418", 50, 32, "#D8F0F0", "#68A0A8");
-    // New templates
-    insert.run("Crimson Dusk", "color", "#1a0808", 52, 34, "#FFE8E0", "#D4908A");
-    insert.run("Ivory Parchment", "color", "#F0E8D8", 50, 32, "#2A1A0A", "#7A6A4A");
-    insert.run("Obsidian", "color", "#0A0A0A", 54, 36, "#FFFFFF", "#888888");
-    insert.run("Forest Canopy", "color", "#0A1A0A", 50, 32, "#E0F0D8", "#8AB878");
-    insert.run("Amber Glow", "color", "#1A1000", 52, 34, "#FFE8B0", "#E0A030");
-    insert.run("Slate Blue", "color", "#1A1E28", 50, 32, "#E0E8F0", "#7890B0");
-    insert.run("Rose Gold", "color", "#1A1018", 52, 34, "#FFE8F0", "#D4A0B8");
-    insert.run("Moonlight", "color", "#14141E", 50, 32, "#F0F0FF", "#A0A0D0");
-    // Minimalist templates
-    insert.run("Minimal Snow", "color", "#FAFAFA", 46, 30, "#1A1A1A", "#999999");
-    insert.run("Minimal Ink", "color", "#111111", 46, 30, "#EEEEEE", "#666666");
-    insert.run("Minimal Stone", "color", "#E8E4E0", 46, 30, "#333333", "#888880");
-    insert.run("Minimal Fog", "color", "#D0D4D8", 46, 30, "#1A1E22", "#606870");
-    insert.run("Minimal Cloud", "color", "#F0F4F8", 46, 30, "#2A3040", "#8090A0");
-    insert.run("Minimal Sand", "color", "#EAE0D0", 46, 30, "#2A2218", "#908068");
-    insert.run("Minimal Ash", "color", "#282828", 46, 30, "#D8D8D8", "#707070");
-    insert.run("Minimal Pearl", "color", "#F8F0F4", 46, 30, "#2A1A22", "#907080");
+    for (const [name, bgType, bgColor, arabicSize, transSize, arabicColor, transColor] of templates) {
+      await sql`
+        INSERT INTO templates (name, background_type, background_color, arabic_font_size, translation_font_size, arabic_color, translation_color)
+        VALUES (${name as string}, ${bgType as string}, ${bgColor as string}, ${arabicSize as number}, ${transSize as number}, ${arabicColor as string}, ${transColor as string})
+      `;
+    }
   }
+
+  migrated = true;
+}
+
+// Ensure migrations run before any query
+async function ensureDb(): Promise<void> {
+  await runMigrations();
 }
 
 // ═══════ Templates ═══════
 
-export function getTemplates(): Template[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM templates ORDER BY id")
-    .all() as Array<Record<string, unknown>>;
+export async function getTemplates(): Promise<Template[]> {
+  await ensureDb();
+  const { rows } = await sql`SELECT * FROM templates ORDER BY id`;
   return rows.map(rowToTemplate);
 }
 
-export function getTemplate(id: number): Template | null {
-  const row = getDb()
-    .prepare("SELECT * FROM templates WHERE id = ?")
-    .get(id) as Record<string, unknown> | undefined;
-  return row ? rowToTemplate(row) : null;
+export async function getTemplate(id: number): Promise<Template | null> {
+  await ensureDb();
+  const { rows } = await sql`SELECT * FROM templates WHERE id = ${id}`;
+  return rows.length > 0 ? rowToTemplate(rows[0]) : null;
 }
 
 function rowToTemplate(row: Record<string, unknown>): Template {
@@ -189,7 +152,7 @@ function rowToTemplate(row: Record<string, unknown>): Template {
 
 // ═══════ Render History ═══════
 
-export function createRenderJob(
+export async function createRenderJob(
   surah: number,
   ayahStart: number,
   ayahEnd: number,
@@ -197,61 +160,71 @@ export function createRenderJob(
   templateId: number,
   userId: string,
   projectId?: number
-): number {
-  // Expires 30 minutes from now
+): Promise<number> {
+  await ensureDb();
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-  const result = getDb()
-    .prepare(
-      `INSERT INTO render_history (user_id, project_id, surah, ayah_start, ayah_end, reciter_id, template_id, status, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
-    )
-    .run(userId, projectId ?? null, surah, ayahStart, ayahEnd, reciterId, templateId, expiresAt);
-  return Number(result.lastInsertRowid);
+  const pid = projectId ?? null;
+  const { rows } = await sql`
+    INSERT INTO render_history (user_id, project_id, surah, ayah_start, ayah_end, reciter_id, template_id, status, expires_at)
+    VALUES (${userId}, ${pid}, ${surah}, ${ayahStart}, ${ayahEnd}, ${reciterId}, ${templateId}, 'pending', ${expiresAt})
+    RETURNING id
+  `;
+  return rows[0].id as number;
 }
 
-export function updateRenderJob(
+export async function updateRenderJob(
   id: number,
   updates: Partial<Pick<RenderJob, "status" | "outputPath" | "errorMessage">>
-): void {
+): Promise<void> {
+  await ensureDb();
   const sets: string[] = [];
   const values: unknown[] = [];
+  let paramIdx = 1;
 
   if (updates.status !== undefined) {
-    sets.push("status = ?");
+    sets.push(`status = $${paramIdx++}`);
     values.push(updates.status);
     if (updates.status === "completed" || updates.status === "failed" || updates.status === "cancelled") {
-      sets.push("completed_at = datetime('now')");
+      sets.push(`completed_at = NOW()`);
     }
   }
   if (updates.outputPath !== undefined) {
-    sets.push("output_path = ?");
+    sets.push(`output_path = $${paramIdx++}`);
     values.push(updates.outputPath);
   }
   if (updates.errorMessage !== undefined) {
-    sets.push("error_message = ?");
+    sets.push(`error_message = $${paramIdx++}`);
     values.push(updates.errorMessage);
   }
 
   values.push(id);
-  getDb()
-    .prepare(`UPDATE render_history SET ${sets.join(", ")} WHERE id = ?`)
-    .run(...values);
+  const query = `UPDATE render_history SET ${sets.join(", ")} WHERE id = $${paramIdx}`;
+  // Use raw query for dynamic SQL
+  const { Pool } = await import("@vercel/postgres");
+  const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
+  try {
+    await pool.query(query, values);
+  } finally {
+    await pool.end();
+  }
 }
 
-export function getRenderHistory(userId: string, projectId?: number): RenderJob[] {
-  let query = "SELECT * FROM render_history WHERE user_id = ?";
-  const params: unknown[] = [userId];
-
+export async function getRenderHistory(userId: string, projectId?: number): Promise<RenderJob[]> {
+  await ensureDb();
+  let rows;
   if (projectId !== undefined) {
-    query += " AND project_id = ?";
-    params.push(projectId);
+    const result = await sql`
+      SELECT * FROM render_history WHERE user_id = ${userId} AND project_id = ${projectId}
+      ORDER BY created_at DESC LIMIT 50
+    `;
+    rows = result.rows;
+  } else {
+    const result = await sql`
+      SELECT * FROM render_history WHERE user_id = ${userId}
+      ORDER BY created_at DESC LIMIT 50
+    `;
+    rows = result.rows;
   }
-
-  query += " ORDER BY created_at DESC LIMIT 50";
-
-  const rows = getDb()
-    .prepare(query)
-    .all(...params) as Array<Record<string, unknown>>;
   return rows.map(rowToRenderJob);
 }
 
@@ -275,63 +248,70 @@ function rowToRenderJob(row: Record<string, unknown>): RenderJob {
 
 // ═══════ Projects ═══════
 
-export function createProject(userId: string, name: string, description?: string, dataSource?: string): number {
-  const result = getDb()
-    .prepare(
-      `INSERT INTO projects (user_id, name, description, data_source) VALUES (?, ?, ?, ?)`
-    )
-    .run(userId, name, description || "", dataSource || "local");
-  return Number(result.lastInsertRowid);
+export async function createProject(userId: string, name: string, description?: string, dataSource?: string): Promise<number> {
+  await ensureDb();
+  const desc = description || "";
+  const ds = dataSource || "local";
+  const { rows } = await sql`
+    INSERT INTO projects (user_id, name, description, data_source)
+    VALUES (${userId}, ${name}, ${desc}, ${ds})
+    RETURNING id
+  `;
+  return rows[0].id as number;
 }
 
-export function getProjects(userId: string): Project[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC")
-    .all(userId) as Array<Record<string, unknown>>;
+export async function getProjects(userId: string): Promise<Project[]> {
+  await ensureDb();
+  const { rows } = await sql`SELECT * FROM projects WHERE user_id = ${userId} ORDER BY updated_at DESC`;
   return rows.map(rowToProject);
 }
 
-export function getProject(id: number, userId: string): Project | null {
-  const row = getDb()
-    .prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?")
-    .get(id, userId) as Record<string, unknown> | undefined;
-  return row ? rowToProject(row) : null;
+export async function getProject(id: number, userId: string): Promise<Project | null> {
+  await ensureDb();
+  const { rows } = await sql`SELECT * FROM projects WHERE id = ${id} AND user_id = ${userId}`;
+  return rows.length > 0 ? rowToProject(rows[0]) : null;
 }
 
-export function updateProject(
+export async function updateProject(
   id: number,
   userId: string,
   updates: Partial<Omit<Project, "id" | "userId" | "createdAt">>
-): void {
-  const sets: string[] = ["updated_at = datetime('now')"];
+): Promise<void> {
+  await ensureDb();
+  const sets: string[] = ["updated_at = NOW()"];
   const values: unknown[] = [];
+  let paramIdx = 1;
 
-  if (updates.name !== undefined) { sets.push("name = ?"); values.push(updates.name); }
-  if (updates.description !== undefined) { sets.push("description = ?"); values.push(updates.description); }
-  if (updates.surah !== undefined) { sets.push("surah = ?"); values.push(updates.surah); }
-  if (updates.ayahStart !== undefined) { sets.push("ayah_start = ?"); values.push(updates.ayahStart); }
-  if (updates.ayahEnd !== undefined) { sets.push("ayah_end = ?"); values.push(updates.ayahEnd); }
-  if (updates.reciterId !== undefined) { sets.push("reciter_id = ?"); values.push(updates.reciterId); }
-  if (updates.templateId !== undefined) { sets.push("template_id = ?"); values.push(updates.templateId); }
-  if (updates.format !== undefined) { sets.push("format = ?"); values.push(updates.format); }
-  if (updates.arabicFont !== undefined) { sets.push("arabic_font = ?"); values.push(updates.arabicFont); }
-  if (updates.wordHighlight !== undefined) { sets.push("word_highlight = ?"); values.push(updates.wordHighlight ? 1 : 0); }
-  if (updates.audioWaveform !== undefined) { sets.push("audio_waveform = ?"); values.push(updates.audioWaveform ? 1 : 0); }
-  if (updates.transitionEffect !== undefined) { sets.push("transition_effect = ?"); values.push(updates.transitionEffect); }
-  if (updates.calligraphyEntrance !== undefined) { sets.push("calligraphy_entrance = ?"); values.push(updates.calligraphyEntrance ? 1 : 0); }
-  if (updates.surahIntro !== undefined) { sets.push("surah_intro = ?"); values.push(updates.surahIntro ? 1 : 0); }
-  if (updates.dataSource !== undefined) { sets.push("data_source = ?"); values.push(updates.dataSource); }
+  if (updates.name !== undefined) { sets.push(`name = $${paramIdx++}`); values.push(updates.name); }
+  if (updates.description !== undefined) { sets.push(`description = $${paramIdx++}`); values.push(updates.description); }
+  if (updates.surah !== undefined) { sets.push(`surah = $${paramIdx++}`); values.push(updates.surah); }
+  if (updates.ayahStart !== undefined) { sets.push(`ayah_start = $${paramIdx++}`); values.push(updates.ayahStart); }
+  if (updates.ayahEnd !== undefined) { sets.push(`ayah_end = $${paramIdx++}`); values.push(updates.ayahEnd); }
+  if (updates.reciterId !== undefined) { sets.push(`reciter_id = $${paramIdx++}`); values.push(updates.reciterId); }
+  if (updates.templateId !== undefined) { sets.push(`template_id = $${paramIdx++}`); values.push(updates.templateId); }
+  if (updates.format !== undefined) { sets.push(`format = $${paramIdx++}`); values.push(updates.format); }
+  if (updates.arabicFont !== undefined) { sets.push(`arabic_font = $${paramIdx++}`); values.push(updates.arabicFont); }
+  if (updates.wordHighlight !== undefined) { sets.push(`word_highlight = $${paramIdx++}`); values.push(updates.wordHighlight); }
+  if (updates.audioWaveform !== undefined) { sets.push(`audio_waveform = $${paramIdx++}`); values.push(updates.audioWaveform); }
+  if (updates.transitionEffect !== undefined) { sets.push(`transition_effect = $${paramIdx++}`); values.push(updates.transitionEffect); }
+  if (updates.calligraphyEntrance !== undefined) { sets.push(`calligraphy_entrance = $${paramIdx++}`); values.push(updates.calligraphyEntrance); }
+  if (updates.surahIntro !== undefined) { sets.push(`surah_intro = $${paramIdx++}`); values.push(updates.surahIntro); }
+  if (updates.dataSource !== undefined) { sets.push(`data_source = $${paramIdx++}`); values.push(updates.dataSource); }
 
   values.push(id, userId);
-  getDb()
-    .prepare(`UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`)
-    .run(...values);
+  const query = `UPDATE projects SET ${sets.join(", ")} WHERE id = $${paramIdx++} AND user_id = $${paramIdx}`;
+  const { Pool } = await import("@vercel/postgres");
+  const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
+  try {
+    await pool.query(query, values);
+  } finally {
+    await pool.end();
+  }
 }
 
-export function deleteProject(id: number, userId: string): void {
-  getDb()
-    .prepare("DELETE FROM projects WHERE id = ? AND user_id = ?")
-    .run(id, userId);
+export async function deleteProject(id: number, userId: string): Promise<void> {
+  await ensureDb();
+  await sql`DELETE FROM projects WHERE id = ${id} AND user_id = ${userId}`;
 }
 
 function rowToProject(row: Record<string, unknown>): Project {
@@ -348,11 +328,11 @@ function rowToProject(row: Record<string, unknown>): Project {
     templateId: (row.template_id as number) || null,
     format: (row.format as string) || "vertical",
     arabicFont: (row.arabic_font as string) || "amiri-quran",
-    wordHighlight: !!(row.word_highlight as number),
-    audioWaveform: !!(row.audio_waveform as number),
+    wordHighlight: !!(row.word_highlight),
+    audioWaveform: !!(row.audio_waveform),
     transitionEffect: (row.transition_effect as TransitionEffect) || "none",
-    calligraphyEntrance: !!(row.calligraphy_entrance as number),
-    surahIntro: !!(row.surah_intro as number),
+    calligraphyEntrance: !!(row.calligraphy_entrance),
+    surahIntro: !!(row.surah_intro),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -360,29 +340,26 @@ function rowToProject(row: Record<string, unknown>): Project {
 
 // ═══════ Cleanup expired renders ═══════
 
-export function cleanupExpiredRenders(): number {
+export async function cleanupExpiredRenders(): Promise<number> {
+  await ensureDb();
   const now = new Date().toISOString();
-  const expired = getDb()
-    .prepare(
-      "SELECT id, output_path, user_id FROM render_history WHERE expires_at IS NOT NULL AND expires_at < ? AND output_path IS NOT NULL"
-    )
-    .all(now) as Array<{ id: number; output_path: string; user_id: string }>;
+  const { rows: expired } = await sql`
+    SELECT id, output_path, user_id FROM render_history
+    WHERE expires_at IS NOT NULL AND expires_at < ${now} AND output_path IS NOT NULL
+  `;
 
   let cleaned = 0;
   for (const row of expired) {
-    // Delete the file
-    if (row.output_path && fs.existsSync(row.output_path)) {
+    const outputPath = row.output_path as string;
+    if (outputPath && fs.existsSync(outputPath)) {
       try {
-        fs.unlinkSync(row.output_path);
+        fs.unlinkSync(outputPath);
         cleaned++;
       } catch {
         // ignore file delete errors
       }
     }
-    // Mark as expired in DB
-    getDb()
-      .prepare("UPDATE render_history SET status = 'expired', output_path = NULL WHERE id = ?")
-      .run(row.id);
+    await sql`UPDATE render_history SET status = 'expired', output_path = NULL WHERE id = ${row.id as number}`;
   }
 
   // Clean up empty user directories

@@ -7,7 +7,7 @@ export async function GET(): Promise<NextResponse> {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.json(getProjects(userId));
+  return NextResponse.json(await getProjects(userId));
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -23,8 +23,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Project name is required" }, { status: 400 });
   }
 
-  const id = createProject(userId, name.trim(), description, dataSource);
-  const project = getProject(id, userId);
+  const id = await createProject(userId, name.trim(), description, dataSource);
+  const project = await getProject(id, userId);
   return NextResponse.json(project, { status: 201 });
 }
 
@@ -41,13 +41,13 @@ export async function PUT(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Project id is required" }, { status: 400 });
   }
 
-  const existing = getProject(id, userId);
+  const existing = await getProject(id, userId);
   if (!existing) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  updateProject(id, userId, updates);
-  const updated = getProject(id, userId);
+  await updateProject(id, userId, updates);
+  const updated = await getProject(id, userId);
   return NextResponse.json(updated);
 }
 
@@ -64,6 +64,6 @@ export async function DELETE(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Project id is required" }, { status: 400 });
   }
 
-  deleteProject(parseInt(id, 10), userId);
+  await deleteProject(parseInt(id, 10), userId);
   return NextResponse.json({ success: true });
 }

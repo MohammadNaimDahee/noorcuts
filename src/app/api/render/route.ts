@@ -11,7 +11,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try { cleanupExpiredRenders(); } catch { /* ignore */ }
+  try { await cleanupExpiredRenders(); } catch { /* ignore */ }
 
   const body = (await request.json()) as RenderRequest;
   const { surah, ayahStart, ayahEnd, reciterId, templateId, format, backgroundVideos, arabicFont, wordHighlight, audioWaveform, transitionEffect, calligraphyEntrance, surahIntro, projectId, dataSource } = body;
@@ -77,12 +77,12 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try { cleanupExpiredRenders(); } catch { /* ignore */ }
+  try { await cleanupExpiredRenders(); } catch { /* ignore */ }
 
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get("projectId");
 
   return NextResponse.json(
-    getRenderHistory(userId, projectId ? parseInt(projectId, 10) : undefined)
+    await getRenderHistory(userId, projectId ? parseInt(projectId, 10) : undefined)
   );
 }
