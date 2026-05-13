@@ -1,11 +1,5 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import {
-  isSurahLevelReciter,
-  getSurahLevelTimestamps,
-  getSurahList,
-  getSurahRevelationType,
-} from "@/lib/quran";
 import { getTemplate } from "@/lib/db";
 import { fetchAyahData } from "@/lib/qf-data";
 import { getChapters } from "@/lib/qf-content";
@@ -52,7 +46,15 @@ export async function GET(request: Request): Promise<NextResponse> {
     let audioUrls: string[];
     let totalDurationMs: number;
 
-    if (dataSource === "local" && isSurahLevelReciter(reciterId)) {
+    // Check if this is a surah-level reciter (local only)
+    let isSurahLevel = false;
+    if (dataSource === "local") {
+      const { isSurahLevelReciter } = await import("@/lib/quran");
+      isSurahLevel = isSurahLevelReciter(reciterId);
+    }
+
+    if (isSurahLevel) {
+      const { getSurahLevelTimestamps } = await import("@/lib/quran");
       const surahTimestamps = getSurahLevelTimestamps(reciterId, surah, ayahStart, ayahEnd);
       const firstStart = surahTimestamps[0].startMs;
       const lastEnd = surahTimestamps[surahTimestamps.length - 1].endMs;
@@ -69,7 +71,6 @@ export async function GET(request: Request): Promise<NextResponse> {
       let cumulativeMs = 0;
       timestamps = recitations.map((r) => {
         const lastSeg = r.segments[r.segments.length - 1];
-        // For QF recitations, segments are empty — use a default 3s per ayah for preview
         const ayahDurationMs = lastSeg
           ? parseInt(String(lastSeg[3]), 10)
           : (r.duration > 0 ? r.duration * 1000 : 3000);
@@ -95,10 +96,12 @@ export async function GET(request: Request): Promise<NextResponse> {
         const ch = chapters.find((c) => c.id === surah);
         totalVerses = ch?.verses_count || ayahEnd;
       } else {
+        const { getSurahList } = await import("@/lib/quran");
         const surahList = getSurahList();
         const surahInfo = surahList.find((s) => s.id === surah);
         totalVerses = surahInfo?.totalVerses || ayahEnd;
       }
+      const { getSurahRevelationType } = await import("@/lib/quran");
       surahMeta = {
         name: ayahs[0].surahName,
         nameEn: ayahs[0].surahNameEn,

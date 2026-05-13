@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSurahList, getAyahRange } from "@/lib/quran";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const surah = searchParams.get("surah");
   const ayahStart = searchParams.get("ayahStart");
   const ayahEnd = searchParams.get("ayahEnd");
+
+  const { getSurahList, getAyahRange } = await import("@/lib/quran");
 
   // If no surah specified, return surah list
   if (!surah) {

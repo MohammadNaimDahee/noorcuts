@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import path from "path";
 import { auth } from "@clerk/nextjs/server";
-import { triggerRender } from "@/lib/render";
 import { getRenderHistory, cleanupExpiredRenders } from "@/lib/db";
 import type { RenderRequest } from "@/types";
 
@@ -22,6 +21,9 @@ export async function POST(request: Request): Promise<Response> {
       { status: 400 }
     );
   }
+
+  // Dynamic import to avoid pulling in Remotion/FFmpeg/better-sqlite3 at bundle time
+  const { triggerRender } = await import("@/lib/render");
 
   const encoder = new TextEncoder();
   const stream = new TransformStream();

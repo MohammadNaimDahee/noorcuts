@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { getReciters, getRecitations } from "@/lib/quran";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const surah = searchParams.get("surah");
   const reciterId = searchParams.get("reciterId");
+
+  const { getReciters, getRecitations } = await import("@/lib/quran");
 
   // If no params, return list of reciters
   if (!surah || !reciterId) {

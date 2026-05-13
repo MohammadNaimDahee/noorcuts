@@ -2,12 +2,6 @@ import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
 import { auth } from "@clerk/nextjs/server";
-import { bundle } from "@remotion/bundler";
-import { renderStill, selectComposition } from "@remotion/renderer";
-import {
-  isSurahLevelReciter,
-  getSurahLevelTimestamps,
-} from "@/lib/quran";
 import { getTemplate } from "@/lib/db";
 import { fetchAyahData } from "@/lib/qf-data";
 import { ARABIC_FONTS } from "@/types";
@@ -70,7 +64,14 @@ export async function POST(request: Request): Promise<Response> {
     let timestamps: AyahTimestamp[];
     let totalDurationMs: number;
 
-    if (dataSource === "local" && isSurahLevelReciter(reciterId)) {
+    let isSurahLevel = false;
+    if (dataSource === "local") {
+      const { isSurahLevelReciter } = await import("@/lib/quran");
+      isSurahLevel = isSurahLevelReciter(reciterId);
+    }
+
+    if (isSurahLevel) {
+      const { getSurahLevelTimestamps } = await import("@/lib/quran");
       const surahTimestamps = getSurahLevelTimestamps(reciterId, surah, ayahStart, ayahEnd);
       const firstStart = surahTimestamps[0].startMs;
       const lastEnd = surahTimestamps[surahTimestamps.length - 1].endMs;
@@ -140,6 +141,10 @@ export async function POST(request: Request): Promise<Response> {
       surahMeta: null,
       format: format as VideoFormat,
     };
+
+    // Dynamic import Remotion to avoid bundling native modules at compile time
+    const { bundle } = await import("@remotion/bundler");
+    const { renderStill, selectComposition } = await import("@remotion/renderer");
 
     const bundled = await bundle({
       entryPoint: REMOTION_ENTRY,
