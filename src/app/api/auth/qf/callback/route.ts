@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import {
   getQfOAuthConfig,
   getRedirectUri,
-  getOAuthSession,
-  deleteOAuthSession,
 } from "@/lib/qf-oauth";
 
 export async function GET(request: Request): Promise<NextResponse> {
@@ -15,23 +14,35 @@ export async function GET(request: Request): Promise<NextResponse> {
   const appBase = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3009";
 
   if (error) {
-    return NextResponse.redirect(`${appBase}?qf_error=${encodeURIComponent(error)}`);
+    const desc = searchParams.get("error_description") || error;
+    return NextResponse.redirect(`${appBase}?qf_error=${encodeURIComponent(desc)}`);
   }
 
   if (!code || !state) {
     return NextResponse.redirect(`${appBase}?qf_error=missing_params`);
   }
 
-  // Validate state (CSRF protection)
-  const session = getOAuthSession(state);
-  if (!session) {
+  // Read OAuth session from cookie (works across serverless Lambdas)
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get("qf_oauth_session");
+  if (!sessionCookie) {
+    return NextResponse.redirect(`${appBase}?qf_error=session_expired`);
+  }
+
+  let session: { state: string; codeVerifier: string };
+  try {
+    session = JSON.parse(sessionCookie.value);
+  } catch {
+    return NextResponse.redirect(`${appBase}?qf_error=invalid_session`);
+  }
+
+  if (session.state !== state) {
     return NextResponse.redirect(`${appBase}?qf_error=invalid_state`);
   }
 
   const { codeVerifier } = session;
-  deleteOAuthSession(state);
 
-  // Exchange code for tokens (confidential client — server-side with Basic auth)
+  // Exchange code for tokens
   const { authBaseUrl, clientId, clientSecret } = getQfOAuthConfig();
   const redirectUri = getRedirectUri();
 
@@ -59,9 +70,12 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   const tokens = await tokenRes.json();
 
-  // Set tokens in httpOnly cookies (secure in production)
+  // Set tokens in httpOnly cookies
   const isSecure = appBase.startsWith("https");
   const response = NextResponse.redirect(`${appBase}?qf_connected=true`);
+
+  // Clear the OAuth session cookie
+  response.cookies.delete("qf_oauth_session");
 
   response.cookies.set("qf_access_token", tokens.access_token, {
     httpOnly: true,
@@ -77,12 +91,11 @@ export async function GET(request: Request): Promise<NextResponse> {
       secure: isSecure,
       sameSite: "lax",
       path: "/",
-      maxAge: 30 * 24 * 60 * 60, // 30 days
+      maxAge: 30 * 24 * 60 * 60,
     });
   }
 
   if (tokens.id_token) {
-    // Store id_token for user info (sub, name, email)
     response.cookies.set("qf_id_token", tokens.id_token, {
       httpOnly: true,
       secure: isSecure,
