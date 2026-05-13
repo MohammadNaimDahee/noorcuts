@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: noorcuts
+    runtime: docker
+    plan: standard
+    healthCheckPath: /
+    envVars:
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: POSTGRES_URL
+        sync: false
+      - key: QF_CLIENT_ID
+        sync: false
+      - key: QF_CLIENT_SECRET
+        sync: false
+      - key: QF_ENV
+        value: production
+      - key: PEXELS_API_KEY
+        sync: false

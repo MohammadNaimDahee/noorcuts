@@ -1,0 +1,7 @@
+node_modules
+.next
+output
+.git
+.env*
+noorcuts.db
+*.md
