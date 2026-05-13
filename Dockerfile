@@ -7,12 +7,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-color-emoji \
     fonts-noto-cjk \
     ca-certificates \
+    dumb-init \
     && rm -rf /var/lib/apt/lists/*
+
+# Workaround for small /dev/shm in Docker — tell Chromium to use /tmp instead
+ENV CHROMIUM_FLAGS="--disable-dev-shm-usage"
 
 # Tell Remotion to use system Chromium
 ENV REMOTION_CHROME_EXECUTABLE=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1
 ENV CHROMIUM_PATH=/usr/bin/chromium
+
+# Chromium flags for Docker (no sandbox needed when running as root)
+ENV CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage"
 
 # Increase Node memory for Remotion bundling/rendering
 ENV NODE_OPTIONS="--max-old-space-size=4096"

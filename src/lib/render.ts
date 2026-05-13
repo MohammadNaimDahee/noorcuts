@@ -221,8 +221,10 @@ export async function triggerRender(
     emitProgress("Bundling composition", 25);
     let bundled: string;
     if (fs.existsSync(PREBUNDLED_PATH)) {
+      console.log("[render] Using pre-bundled Remotion composition");
       bundled = PREBUNDLED_PATH;
     } else {
+      console.log("[render] Bundling Remotion composition at runtime...");
       bundled = await bundle({
         entryPoint: REMOTION_ENTRY,
         publicDir: path.join(process.cwd(), "public"),
@@ -237,14 +239,25 @@ export async function triggerRender(
           },
         }),
       });
+      console.log("[render] Bundle complete:", bundled);
     }
 
     const compositionId = `ShortVideo-${format}`;
+    const isDocker = fs.existsSync("/.dockerenv") || !!process.env.REMOTION_CHROME_EXECUTABLE;
+    const chromiumOptions = {
+      disableWebSecurity: true,
+      enableMultiProcessOnLinux: !isDocker,
+      gl: (isDocker ? "angle-egl" : "angle") as const,
+      ...(process.env.REMOTION_CHROME_EXECUTABLE ? { chromiumExecutable: process.env.REMOTION_CHROME_EXECUTABLE } : {}),
+    };
+    console.log("[render] Selecting composition:", compositionId, "docker:", isDocker);
     const composition = await selectComposition({
       serveUrl: bundled,
       id: compositionId,
       inputProps: inputProps as unknown as Record<string, unknown>,
+      chromiumOptions,
     });
+    console.log("[render] Composition selected, duration:", totalDurationFrames, "frames");
 
     composition.durationInFrames = totalDurationFrames;
 
@@ -258,6 +271,7 @@ export async function triggerRender(
       outputLocation: silentVideoPath,
       inputProps: inputProps as unknown as Record<string, unknown>,
       cancelSignal,
+      chromiumOptions,
       onProgress: ({ progress }) => {
         // Rendering is 35-90% of total progress
         const pct = 35 + Math.round(progress * 55);
