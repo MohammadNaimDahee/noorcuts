@@ -27,6 +27,7 @@ import { fetchAyahData } from "@/lib/qf-data";
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 const TEMP_DIR = path.join(process.cwd(), "output", ".tmp");
 const REMOTION_ENTRY = path.join(process.cwd(), "src", "remotion", "index.ts");
+const PREBUNDLED_PATH = path.join(process.cwd(), ".remotion-bundle");
 
 export type RenderProgressCallback = (stage: string, progress: number, jobId: number) => void;
 
@@ -216,22 +217,27 @@ export async function triggerRender(
       format,
     };
 
-    // Bundle and render video (without audio)
+    // Use pre-bundled composition if available (Docker build), otherwise bundle at runtime
     emitProgress("Bundling composition", 25);
-    const bundled = await bundle({
-      entryPoint: REMOTION_ENTRY,
-      publicDir: path.join(process.cwd(), "public"),
-      webpackOverride: (config) => ({
-        ...config,
-        resolve: {
-          ...config.resolve,
-          alias: {
-            ...(config.resolve?.alias || {}),
-            "@": path.join(process.cwd(), "src"),
+    let bundled: string;
+    if (fs.existsSync(PREBUNDLED_PATH)) {
+      bundled = PREBUNDLED_PATH;
+    } else {
+      bundled = await bundle({
+        entryPoint: REMOTION_ENTRY,
+        publicDir: path.join(process.cwd(), "public"),
+        webpackOverride: (config) => ({
+          ...config,
+          resolve: {
+            ...config.resolve,
+            alias: {
+              ...(config.resolve?.alias || {}),
+              "@": path.join(process.cwd(), "src"),
+            },
           },
-        },
-      }),
-    });
+        }),
+      });
+    }
 
     const compositionId = `ShortVideo-${format}`;
     const composition = await selectComposition({

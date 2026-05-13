@@ -169,6 +169,7 @@ export function PreviewPlayer({
       compositionHeight={fmt.height}
       fps={30}
       controls
+      acknowledgeRemotionLicense
       style={{
         width: "100%",
         height: "100%",
