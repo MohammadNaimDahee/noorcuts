@@ -23,7 +23,16 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // Dynamic import to avoid pulling in Remotion/FFmpeg/better-sqlite3 at bundle time
-  const { triggerRender } = await import("@/lib/render");
+  let triggerRender;
+  try {
+    ({ triggerRender } = await import("@/lib/render"));
+  } catch (err) {
+    console.error("Render module not available:", err);
+    return NextResponse.json(
+      { error: "Rendering is not available on this server. Use a local or VPS deployment for rendering." },
+      { status: 501 }
+    );
+  }
 
   const encoder = new TextEncoder();
   const stream = new TransformStream();

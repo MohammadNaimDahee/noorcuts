@@ -34,21 +34,26 @@ export async function PUT(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { id, ...updates } = body;
+  try {
+    const body = await request.json();
+    const { id, ...updates } = body;
 
-  if (!id) {
-    return NextResponse.json({ error: "Project id is required" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: "Project id is required" }, { status: 400 });
+    }
+
+    const existing = await getProject(id, userId);
+    if (!existing) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    await updateProject(id, userId, updates);
+    const updated = await getProject(id, userId);
+    return NextResponse.json(updated);
+  } catch (err) {
+    console.error("PUT /api/projects error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
-
-  const existing = await getProject(id, userId);
-  if (!existing) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
-
-  await updateProject(id, userId, updates);
-  const updated = await getProject(id, userId);
-  return NextResponse.json(updated);
 }
 
 export async function DELETE(request: Request): Promise<NextResponse> {
