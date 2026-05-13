@@ -244,11 +244,9 @@ export async function triggerRender(
 
     const compositionId = `ShortVideo-${format}`;
     const isDocker = fs.existsSync("/.dockerenv") || !!process.env.REMOTION_CHROME_EXECUTABLE;
-    const chromiumOptions = {
+    const chromiumOptions: Parameters<typeof selectComposition>[0]["chromiumOptions"] = {
       disableWebSecurity: true,
-      enableMultiProcessOnLinux: !isDocker,
-      gl: (isDocker ? "angle-egl" : "angle") as const,
-      ...(process.env.REMOTION_CHROME_EXECUTABLE ? { chromiumExecutable: process.env.REMOTION_CHROME_EXECUTABLE } : {}),
+      gl: isDocker ? "angle-egl" : "angle",
     };
     console.log("[render] Selecting composition:", compositionId, "docker:", isDocker);
     const composition = await selectComposition({
