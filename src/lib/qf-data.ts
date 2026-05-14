@@ -70,7 +70,8 @@ export async function fetchAyahData(
   ayahStart: number,
   ayahEnd: number,
   reciterId: string,
-  dataSource: DataSource = "local"
+  dataSource: DataSource = "local",
+  translationId: string = "20"
 ): Promise<{ ayahs: Ayah[]; recitations: AyahRecitation[] }> {
   if (dataSource === "quran.com") {
     // Map local reciter IDs to QF numeric IDs if needed
@@ -85,7 +86,7 @@ export async function fetchAyahData(
       : reciterId;
 
     const [qfVerses, qfChapters] = await Promise.all([
-      getAllVersesByChapter(surah, "20"),
+      getAllVersesByChapter(surah, translationId),
       getChapters(),
     ]);
     const chapter = qfChapters.find((c) => c.id === surah);
@@ -137,7 +138,7 @@ export async function fetchAyahData(
       return {
         surahNumber: surah,
         ayahNumber: ayahNum,
-        audioUrl: a.url.startsWith("http") ? a.url : `https://audio.qurancdn.com/${a.url}`,
+        audioUrl: a.url.startsWith("http") ? a.url : a.url.startsWith("//") ? `https:${a.url}` : `https://audio.qurancdn.com/${a.url}`,
         duration: 0,
         segments: remapSegments(a.segments || [], indexMap),
       };

@@ -26,6 +26,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const calligraphyEntrance = searchParams.get("calligraphyEntrance") === "true";
   const surahIntro = searchParams.get("surahIntro") === "true";
   const dataSource = (searchParams.get("dataSource") || "local") as DataSource;
+  const translationId = searchParams.get("translationId") || "20";
 
   if (!surah || !ayahStart || !ayahEnd || !reciterId) {
     return NextResponse.json(
@@ -35,7 +36,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource);
+    const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource, translationId);
 
     const template = await getTemplate(templateId);
     if (!template) {

@@ -122,6 +122,7 @@ export interface RenderRequest {
   surahIntro?: boolean;
   arabicFontSize?: number;
   translationFontSize?: number;
+  translationId?: string;
   projectId?: number;
   dataSource?: DataSource;
 }

@@ -52,6 +52,7 @@ export async function triggerRender(
   dataSource: DataSource = "local",
   arabicFontSizeOverride?: number,
   translationFontSizeOverride?: number,
+  translationId?: string,
 ): Promise<{ jobId: number; outputPath: string }> {
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -85,7 +86,7 @@ export async function triggerRender(
     // Gather data
     emitProgress("Gathering ayah data", 0);
     checkCancelled();
-    const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource);
+    const { ayahs, recitations } = await fetchAyahData(surah, ayahStart, ayahEnd, reciterId, dataSource, translationId || "20");
 
     const template = await getTemplate(templateId);
     if (!template) throw new Error(`Template ${templateId} not found`);

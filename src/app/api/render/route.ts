@@ -13,7 +13,7 @@ export async function POST(request: Request): Promise<Response> {
   try { await cleanupExpiredRenders(); } catch { /* ignore */ }
 
   const body = (await request.json()) as RenderRequest;
-  const { surah, ayahStart, ayahEnd, reciterId, templateId, format, backgroundVideos, backgroundImages, arabicFont, wordHighlight, audioWaveform, transitionEffect, calligraphyEntrance, surahIntro, arabicFontSize, translationFontSize, projectId, dataSource } = body;
+  const { surah, ayahStart, ayahEnd, reciterId, templateId, format, backgroundVideos, backgroundImages, arabicFont, wordHighlight, audioWaveform, transitionEffect, calligraphyEntrance, surahIntro, arabicFontSize, translationFontSize, translationId, projectId, dataSource } = body;
 
   if (!surah || !ayahStart || !ayahEnd || !reciterId || !templateId) {
     return NextResponse.json(
@@ -63,6 +63,7 @@ export async function POST(request: Request): Promise<Response> {
         dataSource || "local",
         arabicFontSize,
         translationFontSize,
+        translationId,
       );
       const filename = path.basename(result.outputPath);
       const downloadUrl = `/api/download?file=${encodeURIComponent(filename)}`;

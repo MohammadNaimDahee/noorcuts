@@ -172,6 +172,7 @@ async function fetchPublicTranslations(
 }
 
 // Fetch ALL verses for a chapter (handles pagination)
+// Uses PUBLIC API (no auth) to ensure translation param is respected
 export async function getAllVersesByChapter(
   chapterNumber: number,
   translations: string = "20" // 20 = Saheeh International
@@ -180,33 +181,24 @@ export async function getAllVersesByChapter(
   let page = 1;
 
   while (true) {
-    const data = await getVersesByChapter(chapterNumber, {
-      page,
-      perPage: 50,
-      translations,
-      words: true,
-      fields: "text_uthmani,text_imlaei_simple",
-      translationFields: "text",
-      wordFields: "text_uthmani,text,char_type_name,translation",
-    });
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("per_page", "50");
+    params.set("translations", translations);
+    params.set("words", "true");
+    params.set("fields", "text_uthmani,text_imlaei_simple");
+    params.set("translation_fields", "text");
+    params.set("word_fields", "text_uthmani,text,char_type_name,translation");
+
+    const res = await fetch(
+      `https://api.quran.com/api/v4/verses/by_chapter/${chapterNumber}?${params.toString()}`
+    );
+    if (!res.ok) throw new Error(`Failed to fetch verses: ${res.status}`);
+    const data = await res.json();
     allVerses.push(...data.verses);
 
     if (!data.pagination.next_page) break;
     page = data.pagination.next_page;
-  }
-
-  // If authenticated API didn't return translations, fetch from public API
-  const missingTranslations = allVerses.some((v) => !v.translations?.length);
-  if (missingTranslations) {
-    const publicTranslations = await fetchPublicTranslations(chapterNumber, translations);
-    for (const verse of allVerses) {
-      if (!verse.translations?.length) {
-        const text = publicTranslations.get(verse.verse_key);
-        if (text) {
-          verse.translations = [{ resource_id: Number(translations), text }];
-        }
-      }
-    }
   }
 
   return allVerses;

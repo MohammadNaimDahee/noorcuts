@@ -66,6 +66,10 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [tixslyLoading, setTixslyLoading] = useState(false);
   const [tixslyResult, setTixslyResult] = useState<string | null>(null);
 
+  // Translation state
+  const [translations, setTranslations] = useState<Array<{ id: number; name: string; author_name: string; language_name: string }>>([]);
+  const [selectedTranslation, setSelectedTranslation] = useState<string>("20"); // 20 = Saheeh International
+
   // Quran.com OAuth state
   const [qfConnected, setQfConnected] = useState(false);
   const [qfBookmarks, setQfBookmarks] = useState<Array<{ id: string; surah: number; ayah: number; createdAt: string }>>([]);
@@ -147,6 +151,19 @@ export function Dashboard({ projectId }: DashboardProps) {
 
       setSurahs(surahData);
       setReciters(reciterData);
+
+      // Fetch available translations when using QF
+      if (useQf) {
+        try {
+          const tRes = await fetch("/api/qf/translations");
+          if (tRes.ok) {
+            const tData = await tRes.json();
+            setTranslations(tData.translations || []);
+          }
+        } catch {
+          console.warn("Failed to fetch translations");
+        }
+      }
 
       // Load project settings into form
       if (found.surah) setSelectedSurah(found.surah);
@@ -230,12 +247,37 @@ export function Dashboard({ projectId }: DashboardProps) {
   }, [selectedSurah, surahs, projectLoading, project?.surah]);
 
   const loadPreview = useCallback(async () => {
-    const res = await fetch(
-      `/api/quran?surah=${selectedSurah}&ayahStart=${ayahStart}&ayahEnd=${ayahEnd}`
-    );
-    const data = await res.json();
-    setPreview(data);
-  }, [selectedSurah, ayahStart, ayahEnd]);
+    if (project?.dataSource === "quran.com" && selectedReciter) {
+      // Use preview API which is QF-aware and respects translationId
+      const params = new URLSearchParams({
+        surah: String(selectedSurah),
+        ayahStart: String(ayahStart),
+        ayahEnd: String(ayahEnd),
+        reciterId: selectedReciter,
+        templateId: String(selectedTemplate),
+        format: selectedFormat,
+        arabicFont: selectedFont,
+        wordHighlight: "false",
+        audioWaveform: "false",
+        transitionEffect: "none",
+        calligraphyEntrance: "false",
+        surahIntro: "false",
+        dataSource: "quran.com",
+        translationId: selectedTranslation,
+      });
+      const res = await fetch(`/api/preview?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPreview(data.ayahs || []);
+      }
+    } else {
+      const res = await fetch(
+        `/api/quran?surah=${selectedSurah}&ayahStart=${ayahStart}&ayahEnd=${ayahEnd}`
+      );
+      const data = await res.json();
+      setPreview(data);
+    }
+  }, [selectedSurah, ayahStart, ayahEnd, project?.dataSource, selectedReciter, selectedTemplate, selectedFormat, selectedFont, selectedTranslation]);
 
   useEffect(() => {
     loadPreview();
@@ -425,6 +467,7 @@ export function Dashboard({ projectId }: DashboardProps) {
           surahIntro,
           arabicFontSize: arabicFontSize ?? undefined,
           translationFontSize: translationFontSize ?? undefined,
+          translationId: selectedTranslation,
           projectId,
           dataSource: project?.dataSource || "local",
         }),
@@ -793,8 +836,30 @@ export function Dashboard({ projectId }: DashboardProps) {
                   />
                 </div>
 
+                {/* Translation selector (only when using Quran.com data) */}
+                {translations.length > 0 && (
+                  <div>
+                    <label className="studio-label">Translation</label>
+                    <SearchSelect
+                      options={(() => {
+                        const sorted = [...translations].sort((a, b) => {
+                          if (a.language_name === "english" && b.language_name !== "english") return -1;
+                          if (a.language_name !== "english" && b.language_name === "english") return 1;
+                          return a.language_name.localeCompare(b.language_name) || (a.author_name || a.name).localeCompare(b.author_name || b.name);
+                        });
+                        return sorted.map((t) => ({
+                          value: String(t.id),
+                          label: `${t.language_name.charAt(0).toUpperCase() + t.language_name.slice(1)} — ${t.author_name || t.name}`,
+                        }));
+                      })()}
+                      value={selectedTranslation}
+                      onChange={(v) => setSelectedTranslation(v)}
+                      placeholder="Search translation..."
+                    />
+                  </div>
+                )}
+
                 <div className="border-t border-[#2a2a4a] pt-4">
-                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-2">Info</h3>
                   <div className="space-y-1.5 text-[11px] text-zinc-500">
                     <div className="flex justify-between">
                       <span>Ayahs</span>
@@ -1419,6 +1484,7 @@ export function Dashboard({ projectId }: DashboardProps) {
                 surahIntro={surahIntro}
                 arabicFontSizeOverride={arabicFontSize}
                 translationFontSizeOverride={translationFontSize}
+                translationId={selectedTranslation}
                 backgroundVideoUrls={selectedBgVideos.map((v) => v.url)}
                 backgroundVideoDurations={selectedBgVideos.map((v) => v.duration)}
                 backgroundImageUrls={selectedBgImages.map((img) => img.url)}
