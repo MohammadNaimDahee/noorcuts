@@ -6,6 +6,7 @@ import {
   Sequence,
   Img,
   OffthreadVideo,
+  Video,
   staticFile,
 } from "remotion";
 import type { VideoCompositionProps, TransitionEffect } from "../types";
@@ -460,7 +461,11 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   audioUrls,
   backgroundColor,
   backgroundImage,
+  backgroundImages = [],
   backgroundVideos = [],
+  backgroundImageUrls = [],
+  backgroundVideoUrls = [],
+  backgroundVideoDurations = [],
   arabicFontSize,
   translationFontSize,
   arabicColor,
@@ -511,10 +516,20 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   const { fps, durationInFrames } = useVideoConfig();
   const currentTimeMs = (frame / fps) * 1000;
 
-  const hasBackgroundVideo = backgroundVideos.length > 0;
+  const hasBackgroundVideo = backgroundVideos.length > 0 || backgroundVideoUrls.length > 0;
+  // Resolve image sources: direct URLs (preview) or staticFile paths (render)
+  const resolvedBgImages = backgroundImageUrls.length > 0
+    ? backgroundImageUrls
+    : backgroundImages.length > 0
+      ? backgroundImages.map((p) => staticFile(p))
+      : backgroundImage
+        ? [staticFile(backgroundImage)]
+        : [];
+  const hasBackgroundImage = resolvedBgImages.length > 0;
+  const hasBackground = hasBackgroundVideo || hasBackgroundImage;
 
-  // When background video is present, use per-template optimized colors
-  const videoColors = hasBackgroundVideo
+  // When background video/image is present, use per-template optimized colors
+  const videoColors = hasBackground
     ? getVideoOverlayColors(backgroundColor)
     : null;
   const effectiveArabicColor = videoColors
@@ -526,9 +541,9 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   const accentColor = videoColors
     ? videoColors.accentColor
     : deriveAccentColor(backgroundColor);
-  const light = !hasBackgroundVideo && isLightBg(backgroundColor);
+  const light = !hasBackground && isLightBg(backgroundColor);
   const isLightTemplate = isLightBg(backgroundColor);
-  const videoTextShadow = hasBackgroundVideo
+  const videoTextShadow = hasBackground
     ? "0 2px 8px rgba(0,0,0,0.9), 0 0 30px rgba(0,0,0,0.6), 0 0 60px rgba(0,0,0,0.3)"
     : "";
 
@@ -537,6 +552,115 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   );
   const activeAyah = activeIndex >= 0 ? ayahs[activeIndex] : null;
   const activeTimestamp = activeIndex >= 0 ? timestamps[activeIndex] : null;
+
+  // Long ayah pagination — compute which "page" of words to show
+  // Split on waqf (stop) marks: ۚ ۖ ۗ ۘ ۙ ۛ
+  const WAQF_REGEX = /[\u06D6\u06D7\u06D8\u06D9\u06DA\u06DB]/;
+  const MIN_PAGE_WORDS = 5;
+  const MAX_PAGE_WORDS = 12;
+  const activeArabicWords = activeAyah ? activeAyah.arabic.split(/\s+/) : [];
+  const activeAyahWt = activeIndex >= 0 ? wordTimings[activeIndex] : null;
+  const activeHasTimings = wordHighlight && activeAyahWt && activeAyahWt.words.length > 0;
+
+  // Build pages based on waqf marks
+  const ayahPages: { start: number; end: number }[] = [];
+  if (activeArabicWords.length > MAX_PAGE_WORDS) {
+    let pageStart = 0;
+    for (let wi = 0; wi < activeArabicWords.length; wi++) {
+      const isWaqf = WAQF_REGEX.test(activeArabicWords[wi]);
+      const wordsInPage = wi - pageStart + 1;
+      const wordsRemaining = activeArabicWords.length - wi - 1;
+
+      if (isWaqf && wordsInPage >= MIN_PAGE_WORDS) {
+        ayahPages.push({ start: pageStart, end: wi + 1 });
+        pageStart = wi + 1;
+      } else if (wordsInPage >= MAX_PAGE_WORDS) {
+        // Force split at MAX if no waqf found
+        ayahPages.push({ start: pageStart, end: wi + 1 });
+        pageStart = wi + 1;
+      } else if (wi === activeArabicWords.length - 1) {
+        // Last segment: merge with previous if too short
+        if (wordsRemaining === 0 && wordsInPage < MIN_PAGE_WORDS && ayahPages.length > 0) {
+          const prev = ayahPages[ayahPages.length - 1];
+          prev.end = activeArabicWords.length;
+        } else {
+          ayahPages.push({ start: pageStart, end: activeArabicWords.length });
+        }
+      }
+    }
+    // Handle trailing words not yet added
+    if (ayahPages.length > 0 && ayahPages[ayahPages.length - 1].end < activeArabicWords.length) {
+      const remaining = activeArabicWords.length - ayahPages[ayahPages.length - 1].end;
+      if (remaining < MIN_PAGE_WORDS) {
+        ayahPages[ayahPages.length - 1].end = activeArabicWords.length;
+      } else {
+        ayahPages.push({ start: ayahPages[ayahPages.length - 1].end, end: activeArabicWords.length });
+      }
+    }
+  }
+  const isLongAyah = ayahPages.length > 1;
+
+  let pageVisibleStart = 0;
+  let pageVisibleEnd = activeArabicWords.length;
+  let currentPageIdx = 0;
+
+  if (isLongAyah && activeHasTimings && activeAyahWt) {
+    // Find which word is currently being spoken
+    let currentWordIdx = 0;
+    for (const [wStart, , segStart, segEnd] of activeAyahWt.words) {
+      if (currentTimeMs >= Number(segStart) && currentTimeMs < Number(segEnd)) {
+        currentWordIdx = Number(wStart);
+        break;
+      }
+      if (currentTimeMs >= Number(segEnd)) {
+        currentWordIdx = Number(wStart);
+      }
+    }
+    // Find which page contains this word
+    for (let pi = 0; pi < ayahPages.length; pi++) {
+      if (currentWordIdx >= ayahPages[pi].start && currentWordIdx < ayahPages[pi].end) {
+        currentPageIdx = pi;
+        break;
+      }
+    }
+    pageVisibleStart = ayahPages[currentPageIdx].start;
+    pageVisibleEnd = ayahPages[currentPageIdx].end;
+  }
+
+  // Split translation to match Arabic pages using word-by-word translations
+  const translationText = activeAyah?.translation_en || "";
+  let visibleTranslation = translationText;
+  if (isLongAyah && ayahPages.length > 1) {
+    const wt = activeAyah?.wordTranslations;
+    if (wt && wt.length > 0) {
+      // Use word-by-word translations for perfect alignment
+      const pageWordTranslations = wt.slice(pageVisibleStart, pageVisibleEnd).filter(Boolean);
+      visibleTranslation = pageWordTranslations.join(" ");
+    } else {
+      // Fallback: split translation on sentence-level punctuation
+      const splitRegex = /(?<=[.;:,!?])\s+/;
+      const rawParts = translationText.split(splitRegex);
+      const transParts: string[] = [];
+
+      if (rawParts.length >= ayahPages.length) {
+        const partsPerPage = rawParts.length / ayahPages.length;
+        for (let pi = 0; pi < ayahPages.length; pi++) {
+          const tStart = Math.round(pi * partsPerPage);
+          const tEnd = Math.round((pi + 1) * partsPerPage);
+          transParts.push(rawParts.slice(tStart, tEnd).join(" "));
+        }
+      } else {
+        const transWords = translationText.split(/\s+/);
+        const wordsPerPage = transWords.length / ayahPages.length;
+        for (let pi = 0; pi < ayahPages.length; pi++) {
+          const tStart = Math.round(pi * wordsPerPage);
+          const tEnd = Math.round((pi + 1) * wordsPerPage);
+          transParts.push(transWords.slice(tStart, tEnd).join(" "));
+        }
+      }
+      visibleTranslation = transParts[currentPageIdx] || translationText;
+    }
+  }
 
   let opacity = 1;
   let translateY = 0;
@@ -624,14 +748,74 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
         );
       })}
 
-      {/* Background videos (sequential playlist) */}
+      {/* Background videos (sequential playlist, loops from start when all finish) */}
       {hasBackgroundVideo &&
         (() => {
-          // Distribute total duration evenly across clips, or loop if needed
           const totalFrames = durationInFrames;
-          const clips = backgroundVideos;
-          const framesPerClip = Math.ceil(totalFrames / clips.length);
+          const isDirectUrl = backgroundVideoUrls.length > 0;
+          const clips = isDirectUrl
+            ? backgroundVideoUrls
+            : backgroundVideos.map((v) => staticFile(v));
 
+          // Compute per-clip frame durations from actual durations if available
+          const clipFrames = backgroundVideoDurations.length === clips.length
+            ? backgroundVideoDurations.map((d) => Math.round(d * 30))
+            : null;
+          const playlistDurationFrames = clipFrames
+            ? clipFrames.reduce((a, b) => a + b, 0)
+            : 0;
+
+          if (clipFrames && playlistDurationFrames > 0) {
+            // Build looping playlist: repeat clips until totalFrames is filled
+            const sequences: { src: string; from: number; duration: number }[] = [];
+            let framePos = 0;
+            while (framePos < totalFrames) {
+              for (let i = 0; i < clips.length && framePos < totalFrames; i++) {
+                const dur = Math.min(clipFrames[i], totalFrames - framePos);
+                sequences.push({ src: clips[i], from: framePos, duration: dur });
+                framePos += dur;
+              }
+            }
+
+            return sequences.map((seq, i) => (
+              <Sequence
+                key={`bg-video-${i}`}
+                from={seq.from}
+                durationInFrames={seq.duration}
+              >
+                {isDirectUrl ? (
+                  <Video
+                    src={seq.src}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                    muted
+                  />
+                ) : (
+                  <OffthreadVideo
+                    src={seq.src}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                    muted
+                  />
+                )}
+              </Sequence>
+            ));
+          }
+
+          // Fallback: no durations known — split evenly
+          const framesPerClip = Math.ceil(totalFrames / clips.length);
           return clips.map((videoSrc, i) => (
             <Sequence
               key={`bg-video-${i}`}
@@ -642,8 +826,45 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
                   : framesPerClip
               }
             >
-              <OffthreadVideo
-                src={staticFile(videoSrc)}
+              {isDirectUrl ? (
+                <Video
+                  src={videoSrc}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                  muted
+                />
+              ) : (
+                <OffthreadVideo
+                  src={videoSrc}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                  muted
+                />
+              )}
+            </Sequence>
+          ));
+        })()}
+
+      {/* Background images (sequential slideshow, only if no background videos) */}
+      {!hasBackgroundVideo && hasBackgroundImage &&
+        (() => {
+          if (resolvedBgImages.length === 1) {
+            // Single image — full duration
+            return (
+              <Img
+                src={resolvedBgImages[0]}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -652,37 +873,45 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
                   height: "100%",
                   objectFit: "cover",
                 }}
-                muted
+              />
+            );
+          }
+          // Multiple images — distribute as slideshow
+          const totalFrames = durationInFrames;
+          const framesPerImage = Math.ceil(totalFrames / resolvedBgImages.length);
+          return resolvedBgImages.map((imgSrc, i) => (
+            <Sequence
+              key={`bg-img-${i}`}
+              from={i * framesPerImage}
+              durationInFrames={
+                i === resolvedBgImages.length - 1
+                  ? totalFrames - i * framesPerImage
+                  : framesPerImage
+              }
+            >
+              <Img
+                src={imgSrc}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
               />
             </Sequence>
           ));
         })()}
-
-      {/* Background image (only if no background videos) */}
-      {!hasBackgroundVideo && backgroundImage && (
-        <Img
-          src={staticFile(backgroundImage)}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-          }}
-        />
-      )}
 
       {/* Gradient overlay */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          background: hasBackgroundVideo
-            ? videoColors!.overlayGradient
-            : backgroundImage
-              ? `linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.45) 40%, rgba(0,0,0,0.55) 100%)`
-              : `radial-gradient(ellipse at 50% 40%, ${backgroundColor} 0%, ${backgroundColor} 70%)`,
+          background: hasBackground
+            ? (videoColors?.overlayGradient || `linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.45) 40%, rgba(0,0,0,0.55) 100%)`)
+            : `radial-gradient(ellipse at 50% 40%, ${backgroundColor} 0%, ${backgroundColor} 70%)`,
         }}
       />
 
@@ -1042,21 +1271,22 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
             }}
           >
             {(() => {
-              const arabicWords = activeAyah.arabic.split(/\s+/);
-              const ayahWt = activeIndex >= 0 ? wordTimings[activeIndex] : null;
-              const hasTimings =
-                wordHighlight && ayahWt && ayahWt.words.length > 0;
+              const arabicWords = activeArabicWords;
+              const ayahWt = activeAyahWt;
+              const hasTimings = activeHasTimings;
+              const displayWords = arabicWords.slice(pageVisibleStart, pageVisibleEnd);
 
               return (
                 <>
-                  {arabicWords.map((word, i) => {
+                  {displayWords.map((word, di) => {
+                    const i = pageVisibleStart + di;
                     let wordColor = effectiveArabicColor;
                     let wordGlow =
                       videoTextShadow ||
                       (light ? "none" : `0 0 40px ${glowColor}`);
                     let wordScale = 1;
 
-                    if (hasTimings) {
+                    if (hasTimings && ayahWt) {
                       // Find this word's timing
                       const seg = ayahWt.words.find(([wStart, wEnd]) => i >= Number(wStart) && i < Number(wEnd));
 
@@ -1068,7 +1298,6 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
                           // Active word — compute fade-in progress
                           const elapsed = currentTimeMs - wStart;
                           const t = Math.min(1, elapsed / fadeMs);
-                          // Interpolate color from base to accent
                           wordColor = lerpColor(
                             effectiveArabicColor,
                             accentColor,
@@ -1119,15 +1348,18 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
                         >
                           {word}
                         </span>
-                        {i < arabicWords.length - 1 ? " " : ""}
+                        {di < displayWords.length - 1 ? " " : ""}
                       </React.Fragment>
                     );
                   })}{" "}
-                  <span
-                    style={{ color: accentColor, textShadow: videoTextShadow }}
-                  >
-                    ﴿{toArabicNumeral(activeAyah.ayah)}﴾
-                  </span>
+                  {/* Show ayah number only on the last page */}
+                  {pageVisibleEnd >= arabicWords.length && (
+                    <span
+                      style={{ color: accentColor, textShadow: videoTextShadow }}
+                    >
+                      ﴿{toArabicNumeral(activeAyah.ayah)}﴾
+                    </span>
+                  )}
                 </>
               );
             })()}
@@ -1157,7 +1389,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
               textShadow: videoTextShadow,
             }}
           >
-            &ldquo;{activeAyah.translation_en}&rdquo;
+            &ldquo;{visibleTranslation}&rdquo;
           </div>
         </div>
       )}

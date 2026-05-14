@@ -73,6 +73,17 @@ export async function fetchAyahData(
   dataSource: DataSource = "local"
 ): Promise<{ ayahs: Ayah[]; recitations: AyahRecitation[] }> {
   if (dataSource === "quran.com") {
+    // Map local reciter IDs to QF numeric IDs if needed
+    const LOCAL_TO_QF: Record<string, string> = {
+      "ayah-recitation-abdur-rahman-as-sudais-recitation": "7",
+      "ayah-recitation-mishari-rashid-al-afasy-murattal-hafs-953": "2",
+      "ayah-recitation-mishari-rashid-al-afasy-recitation": "2",
+      "ayah-recitation-hani-ar-rifai-recitation": "9",
+    };
+    const qfReciterId = isNaN(Number(reciterId))
+      ? (LOCAL_TO_QF[reciterId] || "7")
+      : reciterId;
+
     const [qfVerses, qfChapters] = await Promise.all([
       getAllVersesByChapter(surah, "20"),
       getChapters(),
@@ -84,16 +95,33 @@ export async function fetchAyahData(
     if (filteredVerses.length === 0) {
       throw new Error(`No ayahs found for surah ${surah}, ayah ${ayahStart}-${ayahEnd}`);
     }
-    const ayahs: Ayah[] = filteredVerses.map((v) => ({
-      surah,
-      ayah: v.verse_number,
-      surahName: chapter?.name_arabic || "",
-      surahNameEn: chapter?.name_simple || "",
-      arabic: v.text_uthmani || v.text_imlaei || "",
-      translation_en: stripHtml(v.translations?.[0]?.text || ""),
-    }));
+    const ayahs: Ayah[] = filteredVerses.map((v) => {
+      const arabic = v.text_uthmani || v.text_imlaei || "";
+      const splitWords = arabic.split(/\s+/);
+      const indexMap = buildWordIndexMap(v);
 
-    const qfAudio = await getRecitationAudioFiles(Number(reciterId), surah);
+      // Build word translations aligned to splitWords positions
+      const qfWords = (v.words || []).filter((w) => w.char_type_name === "word");
+      const wordTranslations: string[] = new Array(splitWords.length).fill("");
+      for (let qi = 0; qi < qfWords.length; qi++) {
+        const mappedIdx = indexMap.get(qi);
+        if (mappedIdx !== undefined && mappedIdx < splitWords.length) {
+          wordTranslations[mappedIdx] = qfWords[qi].translation?.text || "";
+        }
+      }
+
+      return {
+        surah,
+        ayah: v.verse_number,
+        surahName: chapter?.name_arabic || "",
+        surahNameEn: chapter?.name_simple || "",
+        arabic,
+        translation_en: stripHtml(v.translations?.[0]?.text || ""),
+        wordTranslations,
+      };
+    });
+
+    const qfAudio = await getRecitationAudioFiles(Number(qfReciterId), surah);
     const filteredAudio = qfAudio.filter((a) => {
       const ayahNum = parseInt(a.verse_key.split(":")[1], 10);
       return ayahNum >= ayahStart && ayahNum <= ayahEnd;

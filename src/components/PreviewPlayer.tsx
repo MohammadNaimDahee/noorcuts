@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Player } from "@remotion/player";
 import { ShortVideo } from "@/remotion/ShortVideo";
 import { VIDEO_FORMATS } from "@/types";
@@ -20,6 +20,9 @@ interface PreviewPlayerProps {
   calligraphyEntrance?: boolean;
   surahIntro?: boolean;
   backgroundVideos?: string[];
+  backgroundVideoUrls?: string[];
+  backgroundVideoDurations?: number[];
+  backgroundImageUrls?: string[];
   dataSource?: DataSource;
 }
 
@@ -42,6 +45,9 @@ export function PreviewPlayer({
   calligraphyEntrance = false,
   surahIntro = false,
   backgroundVideos = [],
+  backgroundVideoUrls = [],
+  backgroundVideoDurations = [],
+  backgroundImageUrls = [],
   dataSource = "local",
 }: PreviewPlayerProps) {
   const [data, setData] = useState<PreviewData | null>(null);
@@ -49,82 +55,99 @@ export function PreviewPlayer({
   const [error, setError] = useState<string | null>(null);
   const bgVideosRef = useRef(backgroundVideos);
   bgVideosRef.current = backgroundVideos;
+  const abortRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasFetchedOnce = useRef(false);
 
-  // Stable key for when to re-fetch (only primitive deps)
-  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}-${dataSource}`;
+  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}-${dataSource}-${backgroundImageUrls.join(",")}-${backgroundVideoUrls.join(",")}`;
 
-  const loadPreview = useCallback(async () => {
+  useEffect(() => {
     if (!surah || !ayahStart || !ayahEnd || !reciterId) return;
 
-    setLoading(true);
-    setError(null);
+    // Debounce: wait 500ms after last change before fetching
+    // (instant on first load)
+    const delay = hasFetchedOnce.current ? 500 : 0;
 
-    try {
-      const params = new URLSearchParams({
-        surah: String(surah),
-        ayahStart: String(ayahStart),
-        ayahEnd: String(ayahEnd),
-        reciterId,
-        templateId: String(templateId),
-        format,
-        arabicFont,
-        wordHighlight: String(wordHighlight),
-        audioWaveform: String(audioWaveform),
-        transitionEffect,
-        calligraphyEntrance: String(calligraphyEntrance),
-        surahIntro: String(surahIntro),
-        dataSource,
-      });
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (abortRef.current) abortRef.current.abort();
 
-      const res = await fetch(`/api/preview?${params}`);
-      if (!res.ok) {
-        const body = await res.json();
-        throw new Error(body.error || "Failed to load preview");
+    timerRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      if (!hasFetchedOnce.current) setLoading(true);
+      setError(null);
+
+      try {
+        const params = new URLSearchParams({
+          surah: String(surah),
+          ayahStart: String(ayahStart),
+          ayahEnd: String(ayahEnd),
+          reciterId,
+          templateId: String(templateId),
+          format,
+          arabicFont,
+          wordHighlight: String(wordHighlight),
+          audioWaveform: String(audioWaveform),
+          transitionEffect,
+          calligraphyEntrance: String(calligraphyEntrance),
+          surahIntro: String(surahIntro),
+          dataSource,
+        });
+
+        const res = await fetch(`/api/preview?${params}`, { signal: controller.signal });
+        if (!res.ok) {
+          const body = await res.json();
+          throw new Error(body.error || "Failed to load preview");
+        }
+
+        const d = await res.json();
+
+        const props: VideoCompositionProps = {
+          ayahs: d.ayahs,
+          timestamps: d.timestamps,
+          wordTimings: d.wordTimings,
+          audioUrls: d.audioUrls,
+          backgroundColor: d.backgroundColor,
+          backgroundImage: d.backgroundImage,
+          backgroundImages: [],
+          backgroundVideos: bgVideosRef.current,
+          backgroundImageUrls: backgroundImageUrls,
+          backgroundVideoUrls: backgroundVideoUrls,
+          backgroundVideoDurations: backgroundVideoDurations,
+          arabicFontSize: d.arabicFontSize,
+          translationFontSize: d.translationFontSize,
+          arabicColor: d.arabicColor,
+          translationColor: d.translationColor,
+          arabicFontFamily: d.arabicFontFamily,
+          format,
+          wordHighlight: d.wordHighlight ?? wordHighlight,
+          audioWaveform: d.audioWaveform ?? audioWaveform,
+          transitionEffect: d.transitionEffect ?? transitionEffect,
+          calligraphyEntrance: d.calligraphyEntrance ?? calligraphyEntrance,
+          surahIntro: d.surahIntro ?? surahIntro,
+          surahMeta: d.surahMeta ?? null,
+        };
+
+        setData({ props, totalDurationFrames: d.totalDurationFrames });
+        hasFetchedOnce.current = true;
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : "Preview error");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
+    }, delay);
 
-      const d = await res.json();
-
-      const props: VideoCompositionProps = {
-        ayahs: d.ayahs,
-        timestamps: d.timestamps,
-        wordTimings: d.wordTimings,
-        audioUrls: d.audioUrls,
-        backgroundColor: d.backgroundColor,
-        backgroundImage: d.backgroundImage,
-        backgroundVideos: bgVideosRef.current,
-        arabicFontSize: d.arabicFontSize,
-        translationFontSize: d.translationFontSize,
-        arabicColor: d.arabicColor,
-        translationColor: d.translationColor,
-        arabicFontFamily: d.arabicFontFamily,
-        format,
-        wordHighlight: d.wordHighlight ?? wordHighlight,
-        audioWaveform: d.audioWaveform ?? audioWaveform,
-        transitionEffect: d.transitionEffect ?? transitionEffect,
-        calligraphyEntrance: d.calligraphyEntrance ?? calligraphyEntrance,
-        surahIntro: d.surahIntro ?? surahIntro,
-        surahMeta: d.surahMeta ?? null,
-      };
-
-      setData({
-        props,
-        totalDurationFrames: d.totalDurationFrames,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Preview error");
-    } finally {
-      setLoading(false);
-    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchKey]);
 
-  useEffect(() => {
-    loadPreview();
-  }, [loadPreview]);
-
   const fmt = VIDEO_FORMATS[format];
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-2">
@@ -135,13 +158,13 @@ export function PreviewPlayer({
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-2">
           <span className="text-[10px] text-red-400">{error}</span>
           <button
-            onClick={loadPreview}
+            onClick={() => { hasFetchedOnce.current = false; setData(null); setError(null); }}
             className="text-[10px] text-emerald-400 hover:text-emerald-300"
           >
             Retry

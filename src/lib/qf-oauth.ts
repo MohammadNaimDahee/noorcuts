@@ -19,9 +19,17 @@ export function getQfOAuthConfig(): QfOAuthConfig {
     );
   }
 
-  const urls = env === "production"
-    ? { authBaseUrl: "https://oauth2.quran.foundation", apiBaseUrl: "https://apis.quran.foundation" }
-    : { authBaseUrl: "https://prelive-oauth2.quran.foundation", apiBaseUrl: "https://apis-prelive.quran.foundation" };
+  const endpoint = process.env.QF_ENDPOINT;
+  const authBaseUrl = endpoint
+    || (env === "production"
+      ? "https://oauth2.quran.foundation"
+      : "https://prelive-oauth2.quran.foundation");
+  // Content API: production (without custom endpoint) uses apis.quran.foundation/content
+  // When QF_ENDPOINT is set or env is prelive, use public api.quran.com
+  const apiBaseUrl = (env === "production" && !endpoint)
+    ? "https://apis.quran.foundation/content"
+    : "https://api.quran.com";
+  const urls = { authBaseUrl, apiBaseUrl };
 
   return { env, clientId, clientSecret, ...urls };
 }

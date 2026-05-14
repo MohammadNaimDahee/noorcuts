@@ -22,6 +22,7 @@ const defaultProps: VideoCompositionProps = {
   audioUrls: [],
   backgroundColor: "#000000",
   backgroundImage: null,
+  backgroundImages: [],
   backgroundVideos: [],
   arabicFontSize: 48,
   translationFontSize: 24,

@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { SurahInfo, Ayah, Template, RenderJob, VideoFormat, BackgroundVideo, ArabicFontId, Project, TransitionEffect } from "@/types";
 import { VIDEO_FORMATS, ARABIC_FONTS } from "@/types";
 import { NoorLogo } from "./NoorLogo";
 import { SearchSelect } from "./SearchSelect";
 import { UserButton } from "@clerk/nextjs";
-
-const PreviewPlayer = lazy(() => import("./PreviewPlayer").then((m) => ({ default: m.PreviewPlayer })));
+import { PreviewPlayer } from "./PreviewPlayer";
 type LeftTab = "source" | "style" | "background";
 
 interface DashboardProps {
@@ -43,6 +42,13 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [bgVideoResults, setBgVideoResults] = useState<BackgroundVideo[]>([]);
   const [selectedBgVideos, setSelectedBgVideos] = useState<BackgroundVideo[]>([]);
   const [bgVideoSearching, setBgVideoSearching] = useState(false);
+  const [bgVideoPage, setBgVideoPage] = useState(1);
+  const [bgVideoTotalResults, setBgVideoTotalResults] = useState(0);
+  const [bgSearchType, setBgSearchType] = useState<"video" | "photo">("video");
+  const [bgPhotoResults, setBgPhotoResults] = useState<{ id: string; url: string; thumbnailUrl: string }[]>([]);
+  const [bgPhotoPage, setBgPhotoPage] = useState(1);
+  const [bgPhotoTotalResults, setBgPhotoTotalResults] = useState(0);
+  const [selectedBgImages, setSelectedBgImages] = useState<{ id: string; url: string; thumbnailUrl: string }[]>([]);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
 
   // Auto-clip state
@@ -231,14 +237,42 @@ export function Dashboard({ projectId }: DashboardProps) {
     loadPreview();
   }, [loadPreview]);
 
-  const searchBgVideos = async () => {
+  const searchBgVideos = async (page = 1) => {
     if (!bgVideoQuery.trim()) return;
     setBgVideoSearching(true);
     try {
       const orientation = selectedFormat === "horizontal" ? "landscape" : selectedFormat === "square" ? "square" : "portrait";
-      const res = await fetch(`/api/pexels?q=${encodeURIComponent(bgVideoQuery)}&orientation=${orientation}`);
-      const data = await res.json();
-      if (data.videos) setBgVideoResults(data.videos);
+      if (bgSearchType === "video") {
+        const res = await fetch(`/api/pexels?q=${encodeURIComponent(bgVideoQuery)}&orientation=${orientation}&page=${page}&per_page=15&type=video`);
+        const data = await res.json();
+        if (data.videos) {
+          if (page === 1) {
+            setBgVideoResults(data.videos);
+          } else {
+            setBgVideoResults((prev) => {
+              const ids = new Set(prev.map((v: BackgroundVideo) => v.id));
+              return [...prev, ...data.videos.filter((v: BackgroundVideo) => !ids.has(v.id))];
+            });
+          }
+          setBgVideoPage(page);
+          setBgVideoTotalResults(data.totalResults || 0);
+        }
+      } else {
+        const res = await fetch(`/api/pexels?q=${encodeURIComponent(bgVideoQuery)}&orientation=${orientation}&page=${page}&per_page=15&type=photo`);
+        const data = await res.json();
+        if (data.photos) {
+          if (page === 1) {
+            setBgPhotoResults(data.photos);
+          } else {
+            setBgPhotoResults((prev) => {
+              const ids = new Set(prev.map((p: { id: string }) => p.id));
+              return [...prev, ...data.photos.filter((p: { id: string }) => !ids.has(p.id))];
+            });
+          }
+          setBgPhotoPage(page);
+          setBgPhotoTotalResults(data.totalResults || 0);
+        }
+      }
     } catch {
       // silently fail
     } finally {
@@ -378,6 +412,7 @@ export function Dashboard({ projectId }: DashboardProps) {
           templateId: selectedTemplate,
           format: selectedFormat,
           backgroundVideos: selectedBgVideos,
+          backgroundImages: selectedBgImages.map((img) => ({ id: img.id, url: img.url })),
           arabicFont: selectedFont,
           wordHighlight,
           audioWaveform,
@@ -1071,20 +1106,36 @@ export function Dashboard({ projectId }: DashboardProps) {
             {/* BACKGROUND TAB */}
             {leftTab === "background" && (
               <div className="space-y-4">
-                <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Background Video</h3>
-                <p className="text-[10px] text-zinc-600 -mt-2">Search Pexels for footage. Multiple clips play sequentially.</p>
+                <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Background Media</h3>
+                <p className="text-[10px] text-zinc-600 -mt-2">Search Pexels for videos or images.</p>
+
+                {/* Type toggle */}
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => { setBgSearchType("video"); setBgPhotoResults([]); setBgPhotoPage(1); }}
+                    className={`rounded px-2.5 py-1 text-[10px] font-medium ${bgSearchType === "video" ? "bg-emerald-600 text-white" : "bg-[#0f0f20] text-zinc-500 hover:text-zinc-300"}`}
+                  >
+                    Videos
+                  </button>
+                  <button
+                    onClick={() => { setBgSearchType("photo"); setBgVideoResults([]); setBgVideoPage(1); }}
+                    className={`rounded px-2.5 py-1 text-[10px] font-medium ${bgSearchType === "photo" ? "bg-emerald-600 text-white" : "bg-[#0f0f20] text-zinc-500 hover:text-zinc-300"}`}
+                  >
+                    Images
+                  </button>
+                </div>
 
                 <div className="flex gap-1.5">
                   <input
                     type="text"
                     value={bgVideoQuery}
                     onChange={(e) => setBgVideoQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && searchBgVideos()}
-                    placeholder="nature, ocean, stars..."
+                    onKeyDown={(e) => e.key === "Enter" && searchBgVideos(1)}
+                    placeholder={bgSearchType === "video" ? "nature, ocean, stars..." : "mosque, mountains, sky..."}
                     className="studio-input flex-1"
                   />
                   <button
-                    onClick={searchBgVideos}
+                    onClick={() => searchBgVideos(1)}
                     disabled={bgVideoSearching}
                     className="shrink-0 rounded-md bg-[#2a2a4a] px-3 py-1.5 text-[10px] font-medium text-zinc-300 hover:bg-[#3a3a5a] disabled:opacity-50"
                   >
@@ -1092,7 +1143,33 @@ export function Dashboard({ projectId }: DashboardProps) {
                   </button>
                 </div>
 
-                {/* Selected clips */}
+                {/* Selected background images */}
+                {selectedBgImages.length > 0 && (
+                  <div className="rounded-lg bg-[#0f0f20] p-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[9px] font-medium uppercase tracking-wider text-zinc-500">
+                        {selectedBgImages.length} image{selectedBgImages.length > 1 ? "s" : ""} selected
+                      </span>
+                      <button onClick={() => setSelectedBgImages([])} className="text-[9px] text-red-400 hover:text-red-300">Clear</button>
+                    </div>
+                    <div className="flex gap-1 overflow-x-auto">
+                      {selectedBgImages.map((img, i) => (
+                        <div key={img.id} className="relative shrink-0 group">
+                          <img src={img.thumbnailUrl} alt={`Image ${i + 1}`} className="h-9 w-14 rounded object-cover border border-emerald-500/40" />
+                          <div className="absolute top-0 left-0 bg-emerald-500 text-white text-[7px] px-0.5 rounded-br font-bold">{i + 1}</div>
+                          <button
+                            onClick={() => setSelectedBgImages((prev) => prev.filter((p) => p.id !== img.id))}
+                            className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-red-500 text-white text-[7px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            x
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Selected video clips */}
                 {selectedBgVideos.length > 0 && (
                   <div className="rounded-lg bg-[#0f0f20] p-2">
                     <div className="flex items-center justify-between mb-1.5">
@@ -1120,7 +1197,7 @@ export function Dashboard({ projectId }: DashboardProps) {
                   </div>
                 )}
 
-                {/* Preview player */}
+                {/* Video preview player */}
                 {previewVideoUrl && (
                   <div className="overflow-hidden rounded-lg border border-[#2a2a4a]">
                     <div className="flex items-center justify-between bg-[#0f0f20] px-2 py-1">
@@ -1131,39 +1208,93 @@ export function Dashboard({ projectId }: DashboardProps) {
                   </div>
                 )}
 
-                {/* Results */}
-                {bgVideoResults.length > 0 && (
-                  <div className="grid grid-cols-3 gap-1">
-                    {bgVideoResults.map((v) => {
-                      const isSelected = selectedBgVideos.some((s) => s.id === v.id);
-                      return (
-                        <div
-                          key={v.id}
-                          className={`group relative overflow-hidden rounded border-2 transition-all cursor-pointer ${
-                            isSelected ? "border-emerald-500" : "border-transparent hover:border-zinc-600"
-                          }`}
-                          onClick={() => toggleBgVideo(v)}
-                        >
-                          <img src={v.thumbnailUrl} alt="" className="aspect-video w-full object-cover" />
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setPreviewVideoUrl(previewVideoUrl === v.url ? null : v.url); }}
-                            className="absolute bottom-0.5 left-0.5 h-4 w-4 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
-                            title="Preview"
+                {/* Video results */}
+                {bgSearchType === "video" && bgVideoResults.length > 0 && (
+                  <>
+                    <div className="grid grid-cols-3 gap-1">
+                      {bgVideoResults.map((v) => {
+                        const isSelected = selectedBgVideos.some((s) => s.id === v.id);
+                        return (
+                          <div
+                            key={v.id}
+                            className={`group relative overflow-hidden rounded border-2 transition-all cursor-pointer ${
+                              isSelected ? "border-emerald-500" : "border-transparent hover:border-zinc-600"
+                            }`}
+                            onClick={() => toggleBgVideo(v)}
                           >
-                            <div className="ml-0.5 w-0 h-0 border-t-[2px] border-t-transparent border-b-[2px] border-b-transparent border-l-[4px] border-l-white" />
-                          </button>
-                          <div className={`absolute top-0.5 right-0.5 h-4 w-4 rounded flex items-center justify-center text-[8px] font-bold transition-opacity ${
-                            isSelected
-                              ? "bg-emerald-500 text-white opacity-100"
-                              : "bg-black/60 text-white opacity-0 group-hover:opacity-100"
-                          }`}>
-                            {isSelected ? selectedBgVideos.findIndex((s) => s.id === v.id) + 1 : "+"}
+                            <img src={v.thumbnailUrl} alt="" className="aspect-video w-full object-cover" />
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setPreviewVideoUrl(previewVideoUrl === v.url ? null : v.url); }}
+                              className="absolute bottom-0.5 left-0.5 h-4 w-4 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
+                              title="Preview"
+                            >
+                              <div className="ml-0.5 w-0 h-0 border-t-[2px] border-t-transparent border-b-[2px] border-b-transparent border-l-[4px] border-l-white" />
+                            </button>
+                            <div className={`absolute top-0.5 right-0.5 h-4 w-4 rounded flex items-center justify-center text-[8px] font-bold transition-opacity ${
+                              isSelected
+                                ? "bg-emerald-500 text-white opacity-100"
+                                : "bg-black/60 text-white opacity-0 group-hover:opacity-100"
+                            }`}>
+                              {isSelected ? selectedBgVideos.findIndex((s) => s.id === v.id) + 1 : "+"}
+                            </div>
+                            <div className="absolute bottom-0 right-0 bg-black/70 text-white text-[7px] px-0.5 rounded-tl">{v.duration}s</div>
                           </div>
-                          <div className="absolute bottom-0 right-0 bg-black/70 text-white text-[7px] px-0.5 rounded-tl">{v.duration}s</div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                    {bgVideoResults.length < bgVideoTotalResults && (
+                      <button
+                        onClick={() => searchBgVideos(bgVideoPage + 1)}
+                        disabled={bgVideoSearching}
+                        className="w-full rounded-md bg-[#1a1a3a] py-2 text-[10px] font-medium text-zinc-400 hover:bg-[#2a2a4a] hover:text-zinc-200 disabled:opacity-50"
+                      >
+                        {bgVideoSearching ? "Loading..." : `Load More (${bgVideoResults.length} of ${bgVideoTotalResults})`}
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {/* Photo results */}
+                {bgSearchType === "photo" && bgPhotoResults.length > 0 && (
+                  <>
+                    <div className="grid grid-cols-3 gap-1">
+                      {bgPhotoResults.map((p) => {
+                        const isSelected = selectedBgImages.some((s) => s.id === p.id);
+                        return (
+                          <div
+                            key={p.id}
+                            className={`group relative overflow-hidden rounded border-2 transition-all cursor-pointer ${
+                              isSelected ? "border-emerald-500" : "border-transparent hover:border-zinc-600"
+                            }`}
+                            onClick={() => {
+                              setSelectedBgImages((prev) => {
+                                if (prev.some((s) => s.id === p.id)) return prev.filter((s) => s.id !== p.id);
+                                return [...prev, p];
+                              });
+                            }}
+                          >
+                            <img src={p.thumbnailUrl} alt="" className="aspect-video w-full object-cover" />
+                            <div className={`absolute top-0.5 right-0.5 h-4 w-4 rounded flex items-center justify-center text-[8px] font-bold transition-opacity ${
+                              isSelected
+                                ? "bg-emerald-500 text-white opacity-100"
+                                : "bg-black/60 text-white opacity-0 group-hover:opacity-100"
+                            }`}>
+                              {isSelected ? selectedBgImages.findIndex((s) => s.id === p.id) + 1 : "+"}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {bgPhotoResults.length < bgPhotoTotalResults && (
+                      <button
+                        onClick={() => searchBgVideos(bgPhotoPage + 1)}
+                        disabled={bgVideoSearching}
+                        className="w-full rounded-md bg-[#1a1a3a] py-2 text-[10px] font-medium text-zinc-400 hover:bg-[#2a2a4a] hover:text-zinc-200 disabled:opacity-50"
+                      >
+                        {bgVideoSearching ? "Loading..." : `Load More (${bgPhotoResults.length} of ${bgPhotoTotalResults})`}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -1197,99 +1328,98 @@ export function Dashboard({ projectId }: DashboardProps) {
             </button>
           </div>
 
-          {previewMode && selectedReciter ? (
-            <div
-              className="relative overflow-hidden rounded-lg shadow-2xl shadow-black/50"
-              style={{
-                aspectRatio,
-                maxHeight: "calc(100vh - 180px)",
-                maxWidth: "100%",
-                width: selectedFormat === "vertical" ? "auto" : "100%",
-                height: selectedFormat === "vertical" ? "100%" : "auto",
-              }}
-            >
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center bg-[#0a0a14]">
-                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
-                  </div>
-                }
-              >
-                <PreviewPlayer
-                  surah={selectedSurah}
-                  ayahStart={ayahStart}
-                  ayahEnd={ayahEnd}
-                  reciterId={selectedReciter}
-                  templateId={selectedTemplate}
-                  format={selectedFormat}
-                  arabicFont={selectedFont}
-                  wordHighlight={wordHighlight}
-                  audioWaveform={audioWaveform}
-                  transitionEffect={transitionEffect}
-                  calligraphyEntrance={calligraphyEntrance}
-                  surahIntro={surahIntro}
-                  dataSource={project?.dataSource || "local"}
-                />
-              </Suspense>
-            </div>
-          ) : (
-            <div
-              className="relative overflow-hidden rounded-lg shadow-2xl shadow-black/50"
-              style={{
-                aspectRatio,
-                maxHeight: "calc(100vh - 180px)",
-                maxWidth: "100%",
-                width: selectedFormat === "vertical" ? "auto" : "100%",
-                height: selectedFormat === "vertical" ? "100%" : "auto",
-                backgroundColor: activeTemplate?.backgroundColor || "#0a0a14",
-              }}
-            >
-              <div className="flex h-full w-full flex-col items-center justify-center p-[8%]">
-                <div className="mb-6 text-center">
-                  <div className="text-[10px] uppercase tracking-[0.3em]" style={{ color: activeTemplate?.translationColor || "#aaa", opacity: 0.5 }}>
-                    {currentSurah?.nameEn || "Al-Fatiha"}
-                  </div>
-                </div>
+          {/* Preview Player — always mounted, hidden when not in preview mode */}
+          <div
+            className="relative overflow-hidden rounded-lg shadow-2xl shadow-black/50"
+            style={{
+              aspectRatio,
+              maxHeight: "calc(100vh - 180px)",
+              maxWidth: "100%",
+              width: selectedFormat === "vertical" ? "auto" : "100%",
+              height: selectedFormat === "vertical" ? "100%" : "auto",
+              display: previewMode && selectedReciter ? "block" : "none",
+            }}
+          >
+            {selectedReciter && (
+              <PreviewPlayer
+                surah={selectedSurah}
+                ayahStart={ayahStart}
+                ayahEnd={ayahEnd}
+                reciterId={selectedReciter}
+                templateId={selectedTemplate}
+                format={selectedFormat}
+                arabicFont={selectedFont}
+                wordHighlight={wordHighlight}
+                audioWaveform={audioWaveform}
+                transitionEffect={transitionEffect}
+                calligraphyEntrance={calligraphyEntrance}
+                surahIntro={surahIntro}
+                backgroundVideoUrls={selectedBgVideos.map((v) => v.url)}
+                backgroundVideoDurations={selectedBgVideos.map((v) => v.duration)}
+                backgroundImageUrls={selectedBgImages.map((img) => img.url)}
+                dataSource={project?.dataSource || "local"}
+              />
+            )}
+          </div>
 
-                <div className="w-full space-y-6 overflow-y-auto max-h-[80%] scrollbar-hide">
-                  {preview.length === 0 && (
-                    <p className="text-center text-xs text-zinc-600">No ayahs selected</p>
-                  )}
-                  {preview.map((ayah) => (
-                    <div key={`${ayah.surah}-${ayah.ayah}`} className="space-y-2 text-center">
-                      <p
-                        className="leading-[2.2]"
-                        dir="rtl"
-                        style={{
-                          color: activeTemplate?.arabicColor || "#fff",
-                          fontFamily: `'${activeFont?.family || "Amiri Quran"}', serif`,
-                          fontSize: selectedFormat === "vertical" ? "clamp(14px, 3.5vw, 22px)" : "clamp(16px, 2.5vw, 28px)",
-                        }}
-                      >
-                        {ayah.arabic}
-                      </p>
-                      <div className="mx-auto" style={{ width: 40, height: 1, background: `linear-gradient(90deg, transparent, ${activeTemplate?.arabicColor || "#fff"}30, transparent)` }} />
-                      <p
-                        className="leading-relaxed italic"
-                        style={{
-                          color: activeTemplate?.translationColor || "#ccc",
-                          fontFamily: "'Cormorant Garamond', Georgia, serif",
-                          fontSize: selectedFormat === "vertical" ? "clamp(9px, 1.8vw, 13px)" : "clamp(11px, 1.4vw, 16px)",
-                          opacity: 0.85,
-                        }}
-                      >
-                        {ayah.translation_en}
-                      </p>
-                    </div>
-                  ))}
+          {/* Canvas — static preview */}
+          <div
+            className="relative overflow-hidden rounded-lg shadow-2xl shadow-black/50"
+            style={{
+              aspectRatio,
+              maxHeight: "calc(100vh - 180px)",
+              maxWidth: "100%",
+              width: selectedFormat === "vertical" ? "auto" : "100%",
+              height: selectedFormat === "vertical" ? "100%" : "auto",
+              backgroundColor: activeTemplate?.backgroundColor || "#0a0a14",
+              display: previewMode && selectedReciter ? "none" : "block",
+            }}
+          >
+            <div className="flex h-full w-full flex-col items-center justify-center p-[8%]">
+              <div className="mb-6 text-center">
+                <div className="text-[10px] uppercase tracking-[0.3em]" style={{ color: activeTemplate?.translationColor || "#aaa", opacity: 0.5 }}>
+                  {currentSurah?.nameEn || "Al-Fatiha"}
                 </div>
               </div>
 
-              <div className="absolute bottom-2 right-2 rounded bg-black/40 px-1.5 py-0.5 text-[8px] font-mono text-zinc-500 backdrop-blur-sm">
-                {fmt.width}x{fmt.height}
+              <div className="w-full space-y-6 overflow-y-auto max-h-[80%] scrollbar-hide">
+                {preview.length === 0 && (
+                  <p className="text-center text-xs text-zinc-600">No ayahs selected</p>
+                )}
+                {preview.map((ayah) => (
+                  <div key={`${ayah.surah}-${ayah.ayah}`} className="space-y-2 text-center">
+                    <p
+                      className="leading-[2.2]"
+                      dir="rtl"
+                      style={{
+                        color: activeTemplate?.arabicColor || "#fff",
+                        fontFamily: `'${activeFont?.family || "Amiri Quran"}', serif`,
+                        fontSize: selectedFormat === "vertical" ? "clamp(14px, 3.5vw, 22px)" : "clamp(16px, 2.5vw, 28px)",
+                      }}
+                    >
+                      {ayah.arabic}
+                    </p>
+                    <div className="mx-auto" style={{ width: 40, height: 1, background: `linear-gradient(90deg, transparent, ${activeTemplate?.arabicColor || "#fff"}30, transparent)` }} />
+                    <p
+                      className="leading-relaxed italic"
+                      style={{
+                        color: activeTemplate?.translationColor || "#ccc",
+                        fontFamily: "'Cormorant Garamond', Georgia, serif",
+                        fontSize: selectedFormat === "vertical" ? "clamp(9px, 1.8vw, 13px)" : "clamp(11px, 1.4vw, 16px)",
+                        opacity: 0.85,
+                      }}
+                    >
+                      {ayah.translation_en}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
-          )}
+
+            <div className="absolute bottom-2 right-2 rounded bg-black/40 px-1.5 py-0.5 text-[8px] font-mono text-zinc-500 backdrop-blur-sm">
+              {fmt.width}x{fmt.height}
+            </div>
+          </div>
 
           <div className="mt-3 flex items-center gap-3 text-[10px] text-zinc-600">
             <span className="text-emerald-400 font-medium">{project?.name}</span>

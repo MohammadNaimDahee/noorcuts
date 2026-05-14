@@ -127,6 +127,7 @@ export async function POST(request: Request): Promise<Response> {
       audioUrls: [],
       backgroundColor: template.backgroundColor,
       backgroundImage: template.backgroundImage,
+      backgroundImages: [],
       backgroundVideos: [],
       arabicFontSize: template.arabicFontSize,
       translationFontSize: template.translationFontSize,

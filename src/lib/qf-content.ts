@@ -9,7 +9,7 @@ async function getContentToken(): Promise<string> {
     return cachedToken.accessToken;
   }
 
-  const { authBaseUrl, clientId, clientSecret } = getQfOAuthConfig();
+  const { authBaseUrl, clientId, clientSecret, apiBaseUrl } = getQfOAuthConfig();
 
   const res = await fetch(`${authBaseUrl}/oauth2/token`, {
     method: "POST",
@@ -37,8 +37,9 @@ async function getContentToken(): Promise<string> {
 async function qfContentFetch(path: string): Promise<Response> {
   const { apiBaseUrl, clientId } = getQfOAuthConfig();
   const token = await getContentToken();
+  const url = `${apiBaseUrl}${path}`;
 
-  const res = await fetch(`${apiBaseUrl}${path}`, {
+  const res = await fetch(url, {
     headers: {
       "x-auth-token": token,
       "x-client-id": clientId,
@@ -77,7 +78,7 @@ export interface QfChapter {
 
 export async function getChapters(language?: string): Promise<QfChapter[]> {
   const lang = language ? `?language=${language}` : "";
-  const res = await qfContentFetch(`/content/api/v4/chapters${lang}`);
+  const res = await qfContentFetch(`/api/v4/chapters${lang}`);
   if (!res.ok) throw new Error(`Failed to fetch chapters: ${res.status}`);
   const data = await res.json();
   return data.chapters;
@@ -135,7 +136,7 @@ export async function getVersesByChapter(
   if (options?.wordFields) params.set("word_fields", options.wordFields);
 
   const query = params.toString() ? `?${params.toString()}` : "";
-  const res = await qfContentFetch(`/content/api/v4/verses/by_chapter/${chapterNumber}${query}`);
+  const res = await qfContentFetch(`/api/v4/verses/by_chapter/${chapterNumber}${query}`);
   if (!res.ok) throw new Error(`Failed to fetch verses: ${res.status}`);
   return res.json();
 }
@@ -186,7 +187,7 @@ export async function getAllVersesByChapter(
       words: true,
       fields: "text_uthmani,text_imlaei_simple",
       translationFields: "text",
-      wordFields: "text_uthmani,text,char_type_name",
+      wordFields: "text_uthmani,text,char_type_name,translation",
     });
     allVerses.push(...data.verses);
 
@@ -222,7 +223,7 @@ export interface QfRecitation {
 
 export async function getRecitations(language?: string): Promise<QfRecitation[]> {
   const lang = language ? `?language=${language}` : "";
-  const res = await qfContentFetch(`/content/api/v4/resources/recitations${lang}`);
+  const res = await qfContentFetch(`/api/v4/resources/recitations${lang}`);
   if (!res.ok) throw new Error(`Failed to fetch recitations: ${res.status}`);
   const data = await res.json();
   return data.recitations;
@@ -242,7 +243,7 @@ export async function getRecitationAudioFiles(
   let page = 1;
 
   while (true) {
-    const res = await qfContentFetch(`/content/api/v4/recitations/${recitationId}/by_chapter/${chapterNumber}?fields=segments&per_page=50&page=${page}`);
+    const res = await qfContentFetch(`/api/v4/recitations/${recitationId}/by_chapter/${chapterNumber}?fields=segments&per_page=50&page=${page}`);
     if (!res.ok) throw new Error(`Failed to fetch audio files: ${res.status}`);
     const data = await res.json();
     allFiles.push(...data.audio_files);
@@ -267,7 +268,7 @@ export async function getAudioTimestamp(
   if (options.chapterNumber) params.set("chapter_number", String(options.chapterNumber));
   if (options.verseKey) params.set("verse_key", options.verseKey);
 
-  const res = await qfContentFetch(`/content/api/v4/audio/reciters/${recitationId}/timestamp_ranges?${params.toString()}`);
+  const res = await qfContentFetch(`/api/v4/audio/reciters/${recitationId}/timestamp_ranges?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch timestamp: ${res.status}`);
   const data = await res.json();
   return data.result;
@@ -284,7 +285,7 @@ export interface QfTranslationResource {
 
 export async function getTranslationResources(language?: string): Promise<QfTranslationResource[]> {
   const lang = language ? `?language=${language}` : "";
-  const res = await qfContentFetch(`/content/api/v4/resources/translations${lang}`);
+  const res = await qfContentFetch(`/api/v4/resources/translations${lang}`);
   if (!res.ok) throw new Error(`Failed to fetch translations: ${res.status}`);
   const data = await res.json();
   return data.translations;

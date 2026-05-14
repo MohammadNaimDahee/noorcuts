@@ -39,6 +39,7 @@ export async function triggerRender(
   templateId: number,
   format: VideoFormat = "vertical",
   backgroundVideos: BackgroundVideo[] = [],
+  backgroundImages: { id: string; url: string }[] = [],
   arabicFont: ArabicFontId = "amiri-quran",
   wordHighlight: boolean = false,
   audioWaveform: boolean = false,
@@ -194,6 +195,21 @@ export async function triggerRender(
       }
     }
 
+    // Download background images if provided (user-selected from Pexels)
+    const bgImageStaticPaths: string[] = [];
+    if (backgroundImages.length > 0 && bgVideoStaticPaths.length === 0) {
+      emitProgress("Downloading background images", 18);
+      fs.mkdirSync(bgVideoPublicDir, { recursive: true });
+      for (let i = 0; i < backgroundImages.length; i++) {
+        const bgImg = backgroundImages[i];
+        const ext = bgImg.url.includes(".png") ? "png" : "jpg";
+        const filename = `bg-image-${i}.${ext}`;
+        const localPath = path.join(bgVideoPublicDir, filename);
+        await downloadFile(bgImg.url, localPath);
+        bgImageStaticPaths.push(`temp-bg/job-${jobId}/${filename}`);
+      }
+    }
+
     // Build input props (no audio in composition - we mux it later)
     const inputProps: VideoCompositionProps = {
       ayahs,
@@ -202,7 +218,9 @@ export async function triggerRender(
       audioUrls: [],
       backgroundColor: template.backgroundColor,
       backgroundImage: template.backgroundImage,
+      backgroundImages: bgImageStaticPaths,
       backgroundVideos: bgVideoStaticPaths,
+      backgroundVideoDurations: backgroundVideos.map((v) => v.duration),
       arabicFontSize: template.arabicFontSize,
       translationFontSize: template.translationFontSize,
       arabicColor: template.arabicColor,

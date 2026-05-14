@@ -27,6 +27,29 @@ interface PexelsSearchResponse {
   videos: PexelsVideo[];
 }
 
+interface PexelsPhoto {
+  id: number;
+  width: number;
+  height: number;
+  src: {
+    original: string;
+    large2x: string;
+    large: string;
+    medium: string;
+    small: string;
+    portrait: string;
+    landscape: string;
+    tiny: string;
+  };
+}
+
+interface PexelsPhotoResponse {
+  page: number;
+  per_page: number;
+  total_results: number;
+  photos: PexelsPhoto[];
+}
+
 export async function GET(request: NextRequest) {
   if (!PEXELS_API_KEY) {
     return NextResponse.json(
@@ -39,6 +62,7 @@ export async function GET(request: NextRequest) {
   const orientation = request.nextUrl.searchParams.get("orientation") || "portrait";
   const perPage = request.nextUrl.searchParams.get("per_page") || "15";
   const page = request.nextUrl.searchParams.get("page") || "1";
+  const type = request.nextUrl.searchParams.get("type") || "video"; // "video" or "photo"
 
   if (!query) {
     return NextResponse.json(
@@ -47,6 +71,44 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  if (type === "photo") {
+    const url = new URL("https://api.pexels.com/v1/search");
+    url.searchParams.set("query", query);
+    url.searchParams.set("orientation", orientation);
+    url.searchParams.set("per_page", perPage);
+    url.searchParams.set("page", page);
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: PEXELS_API_KEY },
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return NextResponse.json(
+        { error: `Pexels API error: ${res.status} ${text}` },
+        { status: res.status }
+      );
+    }
+
+    const data: PexelsPhotoResponse = await res.json();
+
+    const photos = data.photos.map((p) => ({
+      id: String(p.id),
+      url: p.src.large2x || p.src.large,
+      thumbnailUrl: p.src.medium,
+      width: p.width,
+      height: p.height,
+    }));
+
+    return NextResponse.json({
+      photos,
+      totalResults: data.total_results,
+      page: data.page,
+      perPage: Number(perPage),
+    });
+  }
+
+  // Video search
   const url = new URL("https://api.pexels.com/videos/search");
   url.searchParams.set("query", query);
   url.searchParams.set("orientation", orientation);
@@ -93,5 +155,6 @@ export async function GET(request: NextRequest) {
     videos,
     totalResults: data.total_results,
     page: data.page,
+    perPage: Number(perPage),
   });
 }

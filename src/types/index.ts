@@ -5,6 +5,8 @@ export interface Ayah {
   surahNameEn: string;
   arabic: string;
   translation_en: string;
+  /** Word-by-word English translations, aligned to arabic.split(/\s+/) positions */
+  wordTranslations?: string[];
 }
 
 export interface AyahTimestamp {
@@ -111,6 +113,7 @@ export interface RenderRequest {
   templateId: number;
   format: VideoFormat;
   backgroundVideos?: BackgroundVideo[];
+  backgroundImages?: { id: string; url: string }[];
   arabicFont?: ArabicFontId;
   wordHighlight?: boolean;
   audioWaveform?: boolean;
@@ -159,7 +162,13 @@ export interface VideoCompositionProps {
   audioUrls: string[];
   backgroundColor: string;
   backgroundImage: string | null;
+  backgroundImages: string[]; // local file paths to background images (sequential slideshow)
   backgroundVideos: string[]; // local file paths to background video clips (sequential playlist)
+  /** Direct URLs for preview (bypass staticFile) */
+  backgroundImageUrls?: string[];
+  backgroundVideoUrls?: string[];
+  /** Durations in seconds for each background video (parallel to backgroundVideos/backgroundVideoUrls) */
+  backgroundVideoDurations?: number[];
   arabicFontSize: number;
   translationFontSize: number;
   arabicColor: string;
