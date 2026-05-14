@@ -23,6 +23,8 @@ interface PreviewPlayerProps {
   backgroundVideoUrls?: string[];
   backgroundVideoDurations?: number[];
   backgroundImageUrls?: string[];
+  arabicFontSizeOverride?: number | null;
+  translationFontSizeOverride?: number | null;
   dataSource?: DataSource;
 }
 
@@ -48,6 +50,8 @@ export function PreviewPlayer({
   backgroundVideoUrls = [],
   backgroundVideoDurations = [],
   backgroundImageUrls = [],
+  arabicFontSizeOverride = null,
+  translationFontSizeOverride = null,
   dataSource = "local",
 }: PreviewPlayerProps) {
   const [data, setData] = useState<PreviewData | null>(null);
@@ -59,7 +63,7 @@ export function PreviewPlayer({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasFetchedOnce = useRef(false);
 
-  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}-${dataSource}-${backgroundImageUrls.join(",")}-${backgroundVideoUrls.join(",")}`;
+  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}-${dataSource}-${backgroundImageUrls.join(",")}-${backgroundVideoUrls.join(",")}-${arabicFontSizeOverride}-${translationFontSizeOverride}`;
 
   useEffect(() => {
     if (!surah || !ayahStart || !ayahEnd || !reciterId) return;
@@ -115,8 +119,8 @@ export function PreviewPlayer({
           backgroundImageUrls: backgroundImageUrls,
           backgroundVideoUrls: backgroundVideoUrls,
           backgroundVideoDurations: backgroundVideoDurations,
-          arabicFontSize: d.arabicFontSize,
-          translationFontSize: d.translationFontSize,
+          arabicFontSize: arabicFontSizeOverride ?? d.arabicFontSize,
+          translationFontSize: translationFontSizeOverride ?? d.translationFontSize,
           arabicColor: d.arabicColor,
           translationColor: d.translationColor,
           arabicFontFamily: d.arabicFontFamily,

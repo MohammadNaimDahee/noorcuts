@@ -49,7 +49,9 @@ export async function triggerRender(
   userId: string,
   projectId?: number,
   onProgress?: RenderProgressCallback,
-  dataSource: DataSource = "local"
+  dataSource: DataSource = "local",
+  arabicFontSizeOverride?: number,
+  translationFontSizeOverride?: number,
 ): Promise<{ jobId: number; outputPath: string }> {
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -221,8 +223,8 @@ export async function triggerRender(
       backgroundImages: bgImageStaticPaths,
       backgroundVideos: bgVideoStaticPaths,
       backgroundVideoDurations: backgroundVideos.map((v) => v.duration),
-      arabicFontSize: template.arabicFontSize,
-      translationFontSize: template.translationFontSize,
+      arabicFontSize: arabicFontSizeOverride ?? template.arabicFontSize,
+      translationFontSize: translationFontSizeOverride ?? template.translationFontSize,
       arabicColor: template.arabicColor,
       translationColor: template.translationColor,
       arabicFontFamily: ARABIC_FONTS.find((f) => f.id === arabicFont)?.family || "Amiri Quran",

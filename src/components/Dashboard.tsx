@@ -37,6 +37,10 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [calligraphyEntrance, setCalligraphyEntrance] = useState(false);
   const [surahIntro, setSurahIntro] = useState(false);
 
+  // Font size overrides (null = use template default)
+  const [arabicFontSize, setArabicFontSize] = useState<number | null>(null);
+  const [translationFontSize, setTranslationFontSize] = useState<number | null>(null);
+
   // Background video state
   const [bgVideoQuery, setBgVideoQuery] = useState("");
   const [bgVideoResults, setBgVideoResults] = useState<BackgroundVideo[]>([]);
@@ -419,6 +423,8 @@ export function Dashboard({ projectId }: DashboardProps) {
           transitionEffect,
           calligraphyEntrance,
           surahIntro,
+          arabicFontSize: arabicFontSize ?? undefined,
+          translationFontSize: translationFontSize ?? undefined,
           projectId,
           dataSource: project?.dataSource || "local",
         }),
@@ -1100,6 +1106,63 @@ export function Dashboard({ projectId }: DashboardProps) {
                     </div>
                   </div>
                 </div>
+
+                {/* Font Size Controls */}
+                <div className="border-t border-[#2a2a4a] pt-4">
+                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 mb-2">Font Size</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-zinc-400">Arabic</span>
+                        <span className="text-[10px] text-zinc-500">{arabicFontSize ?? "Default"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={24}
+                          max={80}
+                          step={2}
+                          value={arabicFontSize ?? 48}
+                          onChange={(e) => setArabicFontSize(Number(e.target.value))}
+                          className="flex-1 h-1 accent-emerald-500 bg-[#2a2a4a] rounded-lg appearance-none cursor-pointer"
+                        />
+                        {arabicFontSize !== null && (
+                          <button
+                            onClick={() => setArabicFontSize(null)}
+                            className="text-[8px] text-zinc-600 hover:text-zinc-400 shrink-0"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-zinc-400">Translation</span>
+                        <span className="text-[10px] text-zinc-500">{translationFontSize ?? "Default"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={12}
+                          max={48}
+                          step={1}
+                          value={translationFontSize ?? 24}
+                          onChange={(e) => setTranslationFontSize(Number(e.target.value))}
+                          className="flex-1 h-1 accent-emerald-500 bg-[#2a2a4a] rounded-lg appearance-none cursor-pointer"
+                        />
+                        {translationFontSize !== null && (
+                          <button
+                            onClick={() => setTranslationFontSize(null)}
+                            className="text-[8px] text-zinc-600 hover:text-zinc-400 shrink-0"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1354,6 +1417,8 @@ export function Dashboard({ projectId }: DashboardProps) {
                 transitionEffect={transitionEffect}
                 calligraphyEntrance={calligraphyEntrance}
                 surahIntro={surahIntro}
+                arabicFontSizeOverride={arabicFontSize}
+                translationFontSizeOverride={translationFontSize}
                 backgroundVideoUrls={selectedBgVideos.map((v) => v.url)}
                 backgroundVideoDurations={selectedBgVideos.map((v) => v.duration)}
                 backgroundImageUrls={selectedBgImages.map((img) => img.url)}
@@ -1394,7 +1459,9 @@ export function Dashboard({ projectId }: DashboardProps) {
                       style={{
                         color: activeTemplate?.arabicColor || "#fff",
                         fontFamily: `'${activeFont?.family || "Amiri Quran"}', serif`,
-                        fontSize: selectedFormat === "vertical" ? "clamp(14px, 3.5vw, 22px)" : "clamp(16px, 2.5vw, 28px)",
+                        fontSize: arabicFontSize
+                          ? `${arabicFontSize * 0.45}px`
+                          : selectedFormat === "vertical" ? "clamp(14px, 3.5vw, 22px)" : "clamp(16px, 2.5vw, 28px)",
                       }}
                     >
                       {ayah.arabic}
@@ -1405,7 +1472,9 @@ export function Dashboard({ projectId }: DashboardProps) {
                       style={{
                         color: activeTemplate?.translationColor || "#ccc",
                         fontFamily: "'Cormorant Garamond', Georgia, serif",
-                        fontSize: selectedFormat === "vertical" ? "clamp(9px, 1.8vw, 13px)" : "clamp(11px, 1.4vw, 16px)",
+                        fontSize: translationFontSize
+                          ? `${translationFontSize * 0.45}px`
+                          : selectedFormat === "vertical" ? "clamp(9px, 1.8vw, 13px)" : "clamp(11px, 1.4vw, 16px)",
                         opacity: 0.85,
                       }}
                     >

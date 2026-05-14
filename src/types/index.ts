@@ -120,6 +120,8 @@ export interface RenderRequest {
   transitionEffect?: TransitionEffect;
   calligraphyEntrance?: boolean;
   surahIntro?: boolean;
+  arabicFontSize?: number;
+  translationFontSize?: number;
   projectId?: number;
   dataSource?: DataSource;
 }
