@@ -354,7 +354,7 @@ export function Dashboard({ projectId }: DashboardProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "start", filename: file.name, contentType: file.type }),
       });
-      const { sessionId } = await startRes.json();
+      const { sessionId, ext } = await startRes.json();
 
       // Send chunks
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -376,7 +376,7 @@ export function Dashboard({ projectId }: DashboardProps) {
       const finishRes = await fetch("/api/upload-background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "finish", sessionId }),
+        body: JSON.stringify({ action: "finish", sessionId, ext }),
       });
       const data = await finishRes.json();
       if (data.url) {

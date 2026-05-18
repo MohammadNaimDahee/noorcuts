@@ -27,49 +27,52 @@ export async function POST(request: NextRequest) {
       await mkdir(TEMP_DIR, { recursive: true });
     }
 
-    const action = request.headers.get("x-upload-action") || "single";
+    const body = await request.json();
+    const action = body.action || "single";
 
     if (action === "start") {
-      const { name } = await request.json();
-      const ext = name.split(".").pop()?.toLowerCase() || "";
+      const filename = body.filename || "";
+      const ext = filename.split(".").pop()?.toLowerCase() || "";
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
         return NextResponse.json(
           { error: `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}` },
           { status: 400 }
         );
       }
-      const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const tempPath = path.join(TEMP_DIR, uploadId);
+      const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tempPath = path.join(TEMP_DIR, sessionId);
       await writeFile(tempPath, Buffer.alloc(0));
-      return NextResponse.json({ uploadId, ext });
+      return NextResponse.json({ sessionId, ext });
     }
 
     if (action === "chunk") {
-      const uploadId = request.headers.get("x-upload-id");
-      if (!uploadId || uploadId.includes("..") || uploadId.includes("/")) {
-        return NextResponse.json({ error: "Invalid upload ID" }, { status: 400 });
+      const sessionId = body.sessionId;
+      if (!sessionId || sessionId.includes("..") || sessionId.includes("/")) {
+        return NextResponse.json({ error: "Invalid session ID" }, { status: 400 });
       }
-      const tempPath = path.join(TEMP_DIR, uploadId);
+      const tempPath = path.join(TEMP_DIR, sessionId);
       if (!existsSync(tempPath)) {
         return NextResponse.json({ error: "Upload session not found" }, { status: 404 });
       }
-      const arrayBuffer = await request.arrayBuffer();
-      await appendFile(tempPath, Buffer.from(arrayBuffer));
+      const chunk = Buffer.from(body.data, "base64");
+      await appendFile(tempPath, chunk);
       return NextResponse.json({ ok: true });
     }
 
     if (action === "finish") {
-      const { uploadId, ext } = await request.json();
-      if (!uploadId || uploadId.includes("..") || uploadId.includes("/")) {
-        return NextResponse.json({ error: "Invalid upload ID" }, { status: 400 });
+      const sessionId = body.sessionId;
+      if (!sessionId || sessionId.includes("..") || sessionId.includes("/")) {
+        return NextResponse.json({ error: "Invalid session ID" }, { status: 400 });
       }
-      const tempPath = path.join(TEMP_DIR, uploadId);
+      const tempPath = path.join(TEMP_DIR, sessionId);
       if (!existsSync(tempPath)) {
         return NextResponse.json({ error: "Upload session not found" }, { status: 404 });
       }
 
+      // Determine extension from the temp filename or original start session
+      const ext = body.ext || sessionId.split(".").pop() || "mp4";
       const isVideo = VIDEO_EXTENSIONS.includes(ext);
-      const filename = `${uploadId}.${ext}`;
+      const filename = `${sessionId}.${ext}`;
       const finalPath = path.join(UPLOAD_DIR, filename);
 
       const { rename } = await import("fs/promises");
