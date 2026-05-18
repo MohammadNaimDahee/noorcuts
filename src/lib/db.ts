@@ -73,6 +73,7 @@ async function runMigrations(): Promise<void> {
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS translation_font_size INTEGER",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS background_videos TEXT",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS background_images TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS overlay_opacity INTEGER DEFAULT 55",
   ];
   for (const stmt of alterStmts) {
     await query(stmt).catch(() => { /* column might already exist */ });
@@ -333,6 +334,7 @@ export async function updateProject(
   if (updates.translationFontSize !== undefined) { sets.push(`translation_font_size = $${paramIdx++}`); values.push(updates.translationFontSize); }
   if (updates.backgroundVideos !== undefined) { sets.push(`background_videos = $${paramIdx++}`); values.push(updates.backgroundVideos); }
   if (updates.backgroundImages !== undefined) { sets.push(`background_images = $${paramIdx++}`); values.push(updates.backgroundImages); }
+  if (updates.overlayOpacity !== undefined) { sets.push(`overlay_opacity = $${paramIdx++}`); values.push(updates.overlayOpacity); }
 
   values.push(id, userId);
   const idIdx = paramIdx++;
@@ -369,6 +371,7 @@ function rowToProject(row: Record<string, unknown>): Project {
     translationFontSize: (row.translation_font_size as number) ?? null,
     backgroundVideos: (row.background_videos as string) || null,
     backgroundImages: (row.background_images as string) || null,
+    overlayOpacity: (row.overlay_opacity as number) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

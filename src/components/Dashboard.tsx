@@ -187,6 +187,13 @@ export function Dashboard({ projectId }: DashboardProps) {
       if (found.transitionEffect) setTransitionEffect(found.transitionEffect);
       if (found.calligraphyEntrance !== undefined) setCalligraphyEntrance(found.calligraphyEntrance);
       if (found.surahIntro !== undefined) setSurahIntro(found.surahIntro);
+      if (found.overlayOpacity != null) setOverlayOpacity(found.overlayOpacity);
+      if (found.backgroundVideos) {
+        try { setSelectedBgVideos(JSON.parse(found.backgroundVideos)); } catch { /* ignore */ }
+      }
+      if (found.backgroundImages) {
+        try { setSelectedBgImages(JSON.parse(found.backgroundImages)); } catch { /* ignore */ }
+      }
 
       setProjectLoading(false);
     });
@@ -345,7 +352,14 @@ export function Dashboard({ projectId }: DashboardProps) {
 
   const handleFileUpload = async (files: FileList) => {
     const CHUNK_SIZE = 512 * 1024; // 512KB chunks
+    // Calculate total chunks across all files for accurate progress
+    let totalChunksAll = 0;
+    for (let i = 0; i < files.length; i++) {
+      totalChunksAll += Math.ceil(files[i].size / CHUNK_SIZE);
+    }
+    let chunksCompleted = 0;
     setUploadProgress({ current: 0, total: files.length, percent: 0 });
+
     for (let fi = 0; fi < files.length; fi++) {
       const file = files[fi];
       // Start session
@@ -370,6 +384,8 @@ export function Dashboard({ projectId }: DashboardProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "chunk", sessionId, chunkIndex: ci, data: base64 }),
         });
+        chunksCompleted++;
+        setUploadProgress({ current: fi + 1, total: files.length, percent: Math.round((chunksCompleted / totalChunksAll) * 100) });
       }
 
       // Finish
@@ -399,8 +415,8 @@ export function Dashboard({ projectId }: DashboardProps) {
           setSelectedBgImages((prev) => [...prev, { id: data.id, url: data.url, thumbnailUrl: data.thumbnailUrl }]);
         }
       }
-      setUploadProgress({ current: fi + 1, total: files.length, percent: Math.round(((fi + 1) / files.length) * 100) });
     }
+    setUploadProgress({ current: files.length, total: files.length, percent: 100 });
     setTimeout(() => setUploadProgress({ current: 0, total: 0, percent: 0 }), 2000);
   };
 
@@ -511,6 +527,12 @@ export function Dashboard({ projectId }: DashboardProps) {
           transitionEffect,
           calligraphyEntrance,
           surahIntro,
+          translationId: selectedTranslation,
+          arabicFontSize,
+          translationFontSize,
+          overlayOpacity,
+          backgroundVideos: JSON.stringify(selectedBgVideos),
+          backgroundImages: JSON.stringify(selectedBgImages),
         }),
       });
       const updated = await res.json();

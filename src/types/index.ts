@@ -154,6 +154,7 @@ export interface Project {
   translationFontSize: number | null;
   backgroundVideos: string | null; // JSON string of BackgroundVideo[]
   backgroundImages: string | null; // JSON string of {id,url,thumbnailUrl}[]
+  overlayOpacity: number | null;
   createdAt: string;
   updatedAt: string;
 }
