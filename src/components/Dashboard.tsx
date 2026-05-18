@@ -94,6 +94,9 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [playUrl, setPlayUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [editingName, setEditingName] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
 
   // Load initial data + project
@@ -107,8 +110,9 @@ export function Dashboard({ projectId }: DashboardProps) {
       setTemplates(templateData);
       setRenderHistory(Array.isArray(historyData) ? historyData : []);
 
-      const allProjects = Array.isArray(projectData) ? projectData : [];
-      const found = allProjects.find((p: Project) => p.id === projectId);
+      const allProjectsList = Array.isArray(projectData) ? projectData : [];
+      setAllProjects(allProjectsList);
+      const found = allProjectsList.find((p: Project) => p.id === projectId);
       if (!found) {
         router.push("/");
         return;
@@ -509,12 +513,16 @@ export function Dashboard({ projectId }: DashboardProps) {
   const handleSaveProject = async () => {
     if (!project) return;
     setSaving(true);
+    // Include name if user was editing it
+    const nameToSave = (editingName && projectNameDraft.trim()) ? projectNameDraft.trim() : project.name;
+    if (editingName) setEditingName(false);
     try {
       const res = await fetch("/api/projects", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: project.id,
+          name: nameToSave,
           surah: selectedSurah,
           ayahStart,
           ayahEnd,
@@ -537,6 +545,7 @@ export function Dashboard({ projectId }: DashboardProps) {
       });
       const updated = await res.json();
       setProject(updated);
+      setAllProjects((prev) => prev.map((p) => p.id === updated.id ? updated : p));
     } catch { /* ignore */ } finally {
       setSaving(false);
     }
@@ -776,7 +785,67 @@ export function Dashboard({ projectId }: DashboardProps) {
             <NoorLogo size={18} variant="mark" />
           </button>
           <div className="h-4 w-px bg-[#2a2a4a]" />
-          <span className="text-xs font-medium text-zinc-300">{project?.name}</span>
+          <div className="relative group">
+            <button
+              onClick={() => setEditingName(!editingName)}
+              className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-zinc-200 bg-[#0f0f20] border border-[#2a2a4a] hover:border-emerald-500/50 transition-all"
+            >
+              <span className="max-w-[140px] truncate">{project?.name}</span>
+              <svg className="h-3 w-3 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {editingName && (
+              <div className="absolute top-full left-0 mt-1 z-50 w-56 rounded-lg border border-[#2a2a4a] bg-[#1a1a2e] shadow-xl shadow-black/50 overflow-hidden">
+                {/* Rename field */}
+                <div className="p-2 border-b border-[#2a2a4a]">
+                  <input
+                    autoFocus
+                    className="w-full bg-[#0f0f20] text-[11px] text-zinc-200 border border-[#2a2a4a] focus:border-emerald-500 rounded px-2 py-1.5 outline-none"
+                    placeholder="Project name..."
+                    value={projectNameDraft}
+                    onChange={(e) => setProjectNameDraft(e.target.value)}
+                    onFocus={() => setProjectNameDraft(project?.name || "")}
+                    onKeyDown={async (e) => {
+                      if (e.key === "Enter") {
+                        if (projectNameDraft.trim() && projectNameDraft !== project?.name) {
+                          const res = await fetch("/api/projects", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: project?.id, name: projectNameDraft.trim() }),
+                          });
+                          if (res.ok) {
+                            const updated = await res.json();
+                            setProject(updated);
+                            setAllProjects((prev) => prev.map((p) => p.id === updated.id ? updated : p));
+                          }
+                        }
+                        setEditingName(false);
+                      }
+                      if (e.key === "Escape") setEditingName(false);
+                    }}
+                  />
+                </div>
+                {/* Project list */}
+                <div className="max-h-48 overflow-y-auto py-1">
+                  {allProjects.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => { setEditingName(false); if (p.id !== projectId) router.push(`/projects/${p.id}`); }}
+                      className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors ${
+                        p.id === projectId
+                          ? "text-emerald-400 bg-emerald-500/5"
+                          : "text-zinc-400 hover:text-zinc-200 hover:bg-[#2a2a4a]"
+                      }`}
+                    >
+                      <span className="truncate block">{p.name}</span>
+                      <span className="text-[9px] text-zinc-600">{p.dataSource}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           {project?.dataSource === "quran.com" && (
             qfConnected ? (
               <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">Quran.com</span>
