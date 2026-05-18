@@ -1881,13 +1881,22 @@ export function Dashboard({ projectId }: DashboardProps) {
 
             {downloadUrl && !rendering && (
               <div className="mt-2 flex gap-1.5">
-                <a
-                  href={downloadUrl}
-                  download
+                <button
+                  onClick={async () => {
+                    const res = await fetch(downloadUrl);
+                    if (!res.ok) return;
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `noorcuts-${selectedSurah}-${ayahStart}-${ayahEnd}.mp4`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
                   className="flex-1 rounded-md bg-blue-600 py-1.5 text-center text-[10px] font-semibold text-white hover:bg-blue-500"
                 >
                   Download
-                </a>
+                </button>
                 <button
                   onClick={() => setPlayUrl(playUrl ? null : downloadUrl)}
                   className="flex-1 rounded-md bg-[#2a2a4a] py-1.5 text-[10px] font-semibold text-white hover:bg-[#3a3a5a]"
