@@ -41,6 +41,7 @@ yarn-error.log*
 next-env.d.ts
 output/
 public/temp-bg/
+public/backgrounds/uploads/
 noorcuts.db
 noorcuts.db-shm
 noorcuts.db-wal

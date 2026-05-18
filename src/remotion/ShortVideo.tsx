@@ -478,6 +478,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   calligraphyEntrance = false,
   surahIntro = false,
   surahMeta = null,
+  overlayOpacity = 55,
 }) => {
   const { width, height } = useVideoConfig();
 
@@ -631,35 +632,28 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   const translationText = activeAyah?.translation_en || "";
   let visibleTranslation = translationText;
   if (isLongAyah && ayahPages.length > 1) {
-    const wt = activeAyah?.wordTranslations;
-    if (wt && wt.length > 0) {
-      // Use word-by-word translations for perfect alignment
-      const pageWordTranslations = wt.slice(pageVisibleStart, pageVisibleEnd).filter(Boolean);
-      visibleTranslation = pageWordTranslations.join(" ");
-    } else {
-      // Fallback: split translation on sentence-level punctuation
-      const splitRegex = /(?<=[.;:,!?])\s+/;
-      const rawParts = translationText.split(splitRegex);
-      const transParts: string[] = [];
+    // Split translation on sentence-level punctuation to match pages
+    const splitRegex = /(?<=[.;:,!?])\s+/;
+    const rawParts = translationText.split(splitRegex);
+    const transParts: string[] = [];
 
-      if (rawParts.length >= ayahPages.length) {
-        const partsPerPage = rawParts.length / ayahPages.length;
-        for (let pi = 0; pi < ayahPages.length; pi++) {
-          const tStart = Math.round(pi * partsPerPage);
-          const tEnd = Math.round((pi + 1) * partsPerPage);
-          transParts.push(rawParts.slice(tStart, tEnd).join(" "));
-        }
-      } else {
-        const transWords = translationText.split(/\s+/);
-        const wordsPerPage = transWords.length / ayahPages.length;
-        for (let pi = 0; pi < ayahPages.length; pi++) {
-          const tStart = Math.round(pi * wordsPerPage);
-          const tEnd = Math.round((pi + 1) * wordsPerPage);
-          transParts.push(transWords.slice(tStart, tEnd).join(" "));
-        }
+    if (rawParts.length >= ayahPages.length) {
+      const partsPerPage = rawParts.length / ayahPages.length;
+      for (let pi = 0; pi < ayahPages.length; pi++) {
+        const tStart = Math.round(pi * partsPerPage);
+        const tEnd = Math.round((pi + 1) * partsPerPage);
+        transParts.push(rawParts.slice(tStart, tEnd).join(" "));
       }
-      visibleTranslation = transParts[currentPageIdx] || translationText;
+    } else {
+      const transWords = translationText.split(/\s+/);
+      const wordsPerPage = transWords.length / ayahPages.length;
+      for (let pi = 0; pi < ayahPages.length; pi++) {
+        const tStart = Math.round(pi * wordsPerPage);
+        const tEnd = Math.round((pi + 1) * wordsPerPage);
+        transParts.push(transWords.slice(tStart, tEnd).join(" "));
+      }
     }
+    visibleTranslation = transParts[currentPageIdx] || translationText;
   }
 
   let opacity = 1;
@@ -766,14 +760,31 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
             : 0;
 
           if (clipFrames && playlistDurationFrames > 0) {
-            // Build looping playlist: repeat clips until totalFrames is filled
             const sequences: { src: string; from: number; duration: number }[] = [];
             let framePos = 0;
-            while (framePos < totalFrames) {
+
+            if (playlistDurationFrames >= totalFrames) {
+              // More video than needed: show ALL clips, each trimmed proportionally
+              // Each clip gets a share of totalFrames proportional to its original duration
+              const totalClipFrames = clipFrames.reduce((a, b) => a + b, 0);
               for (let i = 0; i < clips.length && framePos < totalFrames; i++) {
-                const dur = Math.min(clipFrames[i], totalFrames - framePos);
-                sequences.push({ src: clips[i], from: framePos, duration: dur });
-                framePos += dur;
+                const proportion = clipFrames[i] / totalClipFrames;
+                const dur = i === clips.length - 1
+                  ? totalFrames - framePos
+                  : Math.round(proportion * totalFrames);
+                if (dur > 0) {
+                  sequences.push({ src: clips[i], from: framePos, duration: Math.min(dur, totalFrames - framePos) });
+                  framePos += dur;
+                }
+              }
+            } else {
+              // Less video than needed: play all clips in order, then loop from start
+              while (framePos < totalFrames) {
+                for (let i = 0; i < clips.length && framePos < totalFrames; i++) {
+                  const dur = Math.min(clipFrames[i], totalFrames - framePos);
+                  sequences.push({ src: clips[i], from: framePos, duration: dur });
+                  framePos += dur;
+                }
               }
             }
 
@@ -910,7 +921,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
           position: "absolute",
           inset: 0,
           background: hasBackground
-            ? (videoColors?.overlayGradient || `linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.45) 40%, rgba(0,0,0,0.55) 100%)`)
+            ? `linear-gradient(180deg, rgba(0,0,0,${overlayOpacity / 100}) 0%, rgba(0,0,0,${(overlayOpacity - 10) / 100}) 40%, rgba(0,0,0,${overlayOpacity / 100}) 100%)`
             : `radial-gradient(ellipse at 50% 40%, ${backgroundColor} 0%, ${backgroundColor} 70%)`,
         }}
       />

@@ -57,7 +57,7 @@ export async function GET(request: Request): Promise<NextResponse> {
         const end = match[2] ? parseInt(match[2], 10) : total - 1;
         const chunk = buf.subarray(start, end + 1);
 
-        return new NextResponse(chunk, {
+        return new NextResponse(new Uint8Array(chunk), {
           status: 206,
           headers: {
             "Content-Type": contentType,
@@ -70,7 +70,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       }
     }
 
-    return new NextResponse(buf, {
+    return new NextResponse(new Uint8Array(buf), {
       headers: {
         "Content-Type": contentType,
         "Content-Length": String(total),

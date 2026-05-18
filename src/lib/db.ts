@@ -66,6 +66,18 @@ async function runMigrations(): Promise<void> {
     )
   `);
 
+  // Add columns that may not exist yet
+  const alterStmts = [
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS translation_id TEXT DEFAULT '20'",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS arabic_font_size INTEGER",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS translation_font_size INTEGER",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS background_videos TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS background_images TEXT",
+  ];
+  for (const stmt of alterStmts) {
+    await query(stmt).catch(() => { /* column might already exist */ });
+  }
+
   await query(`
     CREATE TABLE IF NOT EXISTS render_history (
       id SERIAL PRIMARY KEY,
@@ -316,6 +328,11 @@ export async function updateProject(
   if (updates.calligraphyEntrance !== undefined) { sets.push(`calligraphy_entrance = $${paramIdx++}`); values.push(updates.calligraphyEntrance); }
   if (updates.surahIntro !== undefined) { sets.push(`surah_intro = $${paramIdx++}`); values.push(updates.surahIntro); }
   if (updates.dataSource !== undefined) { sets.push(`data_source = $${paramIdx++}`); values.push(updates.dataSource); }
+  if (updates.translationId !== undefined) { sets.push(`translation_id = $${paramIdx++}`); values.push(updates.translationId); }
+  if (updates.arabicFontSize !== undefined) { sets.push(`arabic_font_size = $${paramIdx++}`); values.push(updates.arabicFontSize); }
+  if (updates.translationFontSize !== undefined) { sets.push(`translation_font_size = $${paramIdx++}`); values.push(updates.translationFontSize); }
+  if (updates.backgroundVideos !== undefined) { sets.push(`background_videos = $${paramIdx++}`); values.push(updates.backgroundVideos); }
+  if (updates.backgroundImages !== undefined) { sets.push(`background_images = $${paramIdx++}`); values.push(updates.backgroundImages); }
 
   values.push(id, userId);
   const idIdx = paramIdx++;
@@ -347,6 +364,11 @@ function rowToProject(row: Record<string, unknown>): Project {
     transitionEffect: (row.transition_effect as TransitionEffect) || "none",
     calligraphyEntrance: !!(row.calligraphy_entrance),
     surahIntro: !!(row.surah_intro),
+    translationId: (row.translation_id as string) || null,
+    arabicFontSize: (row.arabic_font_size as number) ?? null,
+    translationFontSize: (row.translation_font_size as number) ?? null,
+    backgroundVideos: (row.background_videos as string) || null,
+    backgroundImages: (row.background_images as string) || null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

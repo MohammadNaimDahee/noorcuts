@@ -130,19 +130,36 @@ export async function fetchAyahData(
     if (filteredAudio.length === 0) {
       throw new Error(`No audio found for reciter ${reciterId}, surah ${surah}`);
     }
-    const recitations: AyahRecitation[] = filteredAudio.map((a) => {
+    const recitations: AyahRecitation[] = await Promise.all(filteredAudio.map(async (a) => {
       const ayahNum = parseInt(a.verse_key.split(":")[1], 10);
       const verse = filteredVerses.find((v) => v.verse_number === ayahNum);
       const indexMap = verse ? buildWordIndexMap(verse) : new Map<number, number>();
+      const audioUrl = a.url.startsWith("http") ? a.url : a.url.startsWith("//") ? `https:${a.url}` : `https://audio.qurancdn.com/${a.url}`;
+
+      // Estimate duration from segments, or from Content-Length if no segments
+      let duration = 0;
+      if (a.segments && a.segments.length > 0) {
+        const lastSeg = a.segments[a.segments.length - 1];
+        duration = (lastSeg[lastSeg.length - 1] || 0) / 1000;
+      } else {
+        // No segments — estimate from file size (assuming ~128kbps mp3 = 16KB/s)
+        try {
+          const headRes = await fetch(audioUrl, { method: "HEAD" });
+          const contentLength = parseInt(headRes.headers.get("content-length") || "0", 10);
+          if (contentLength > 0) {
+            duration = contentLength / 16000; // 128kbps = 16000 bytes/sec
+          }
+        } catch { /* fallback to 0 */ }
+      }
 
       return {
         surahNumber: surah,
         ayahNumber: ayahNum,
-        audioUrl: a.url.startsWith("http") ? a.url : a.url.startsWith("//") ? `https:${a.url}` : `https://audio.qurancdn.com/${a.url}`,
-        duration: 0,
+        audioUrl,
+        duration,
         segments: remapSegments(a.segments || [], indexMap),
       };
-    });
+    }));
 
     return { ayahs, recitations };
   }

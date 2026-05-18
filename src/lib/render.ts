@@ -53,6 +53,8 @@ export async function triggerRender(
   arabicFontSizeOverride?: number,
   translationFontSizeOverride?: number,
   translationId?: string,
+  overlayOpacity?: number,
+  customTranslations?: Record<number, string>,
 ): Promise<{ jobId: number; outputPath: string }> {
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -192,7 +194,13 @@ export async function triggerRender(
         const bgVideo = backgroundVideos[i];
         const filename = `bg-video-${i}.mp4`;
         const localPath = path.join(bgVideoPublicDir, filename);
-        await downloadFile(bgVideo.url, localPath);
+        if (bgVideo.url.startsWith("/")) {
+          // Local uploaded file — copy from public/
+          const srcPath = path.join(process.cwd(), "public", bgVideo.url);
+          fs.copyFileSync(srcPath, localPath);
+        } else {
+          await downloadFile(bgVideo.url, localPath);
+        }
         // staticFile() paths are relative to public/
         bgVideoStaticPaths.push(`temp-bg/job-${jobId}/${filename}`);
       }
@@ -208,8 +216,22 @@ export async function triggerRender(
         const ext = bgImg.url.includes(".png") ? "png" : "jpg";
         const filename = `bg-image-${i}.${ext}`;
         const localPath = path.join(bgVideoPublicDir, filename);
-        await downloadFile(bgImg.url, localPath);
+        if (bgImg.url.startsWith("/")) {
+          const srcPath = path.join(process.cwd(), "public", bgImg.url);
+          fs.copyFileSync(srcPath, localPath);
+        } else {
+          await downloadFile(bgImg.url, localPath);
+        }
         bgImageStaticPaths.push(`temp-bg/job-${jobId}/${filename}`);
+      }
+    }
+
+    // Apply custom translations if provided
+    if (customTranslations && Object.keys(customTranslations).length > 0) {
+      for (const a of ayahs) {
+        if (customTranslations[a.ayah] !== undefined) {
+          a.translation_en = customTranslations[a.ayah];
+        }
       }
     }
 
@@ -236,6 +258,7 @@ export async function triggerRender(
       surahIntro,
       surahMeta,
       format,
+      overlayOpacity: overlayOpacity ?? 55,
     };
 
     // Use pre-bundled composition if available (Docker build), otherwise bundle at runtime

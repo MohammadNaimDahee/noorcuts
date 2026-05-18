@@ -123,6 +123,8 @@ export interface RenderRequest {
   arabicFontSize?: number;
   translationFontSize?: number;
   translationId?: string;
+  overlayOpacity?: number;
+  customTranslations?: Record<number, string>;
   projectId?: number;
   dataSource?: DataSource;
 }
@@ -147,6 +149,11 @@ export interface Project {
   transitionEffect: TransitionEffect;
   calligraphyEntrance: boolean;
   surahIntro: boolean;
+  translationId: string | null;
+  arabicFontSize: number | null;
+  translationFontSize: number | null;
+  backgroundVideos: string | null; // JSON string of BackgroundVideo[]
+  backgroundImages: string | null; // JSON string of {id,url,thumbnailUrl}[]
   createdAt: string;
   updatedAt: string;
 }
@@ -184,6 +191,7 @@ export interface VideoCompositionProps {
   surahIntro: boolean; // cinematic surah intro card
   surahMeta: SurahMeta | null; // metadata for intro card
   format: VideoFormat;
+  overlayOpacity?: number; // 0-100, controls background overlay darkness
 }
 
 export type RevelationType = "meccan" | "medinan";

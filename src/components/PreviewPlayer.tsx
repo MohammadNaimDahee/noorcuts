@@ -27,6 +27,8 @@ interface PreviewPlayerProps {
   translationFontSizeOverride?: number | null;
   translationId?: string;
   dataSource?: DataSource;
+  overlayOpacity?: number;
+  customTranslations?: Record<number, string>;
 }
 
 interface PreviewData {
@@ -55,6 +57,8 @@ export function PreviewPlayer({
   translationFontSizeOverride = null,
   translationId = "20",
   dataSource = "local",
+  overlayOpacity = 55,
+  customTranslations = {},
 }: PreviewPlayerProps) {
   const [data, setData] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,7 +69,7 @@ export function PreviewPlayer({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasFetchedOnce = useRef(false);
 
-  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}-${dataSource}-${translationId}-${backgroundImageUrls.join(",")}-${backgroundVideoUrls.join(",")}-${arabicFontSizeOverride}-${translationFontSizeOverride}`;
+  const fetchKey = `${surah}-${ayahStart}-${ayahEnd}-${reciterId}-${templateId}-${format}-${arabicFont}-${wordHighlight}-${audioWaveform}-${transitionEffect}-${calligraphyEntrance}-${surahIntro}-${dataSource}-${translationId}-${backgroundImageUrls.join(",")}-${backgroundVideoUrls.join(",")}-${arabicFontSizeOverride}-${translationFontSizeOverride}-${overlayOpacity}-${JSON.stringify(customTranslations)}`;
 
   useEffect(() => {
     if (!surah || !ayahStart || !ayahEnd || !reciterId) return;
@@ -110,8 +114,16 @@ export function PreviewPlayer({
 
         const d = await res.json();
 
+        // Apply custom translations
+        const ayahs = d.ayahs.map((a: { ayah: number; translation_en: string }) => {
+          if (customTranslations[a.ayah] !== undefined) {
+            return { ...a, translation_en: customTranslations[a.ayah] };
+          }
+          return a;
+        });
+
         const props: VideoCompositionProps = {
-          ayahs: d.ayahs,
+          ayahs,
           timestamps: d.timestamps,
           wordTimings: d.wordTimings,
           audioUrls: (d.audioUrls as string[]).map((u: string) =>
@@ -136,6 +148,7 @@ export function PreviewPlayer({
           calligraphyEntrance: d.calligraphyEntrance ?? calligraphyEntrance,
           surahIntro: d.surahIntro ?? surahIntro,
           surahMeta: d.surahMeta ?? null,
+          overlayOpacity,
         };
 
         setData({ props, totalDurationFrames: d.totalDurationFrames });

@@ -20,8 +20,14 @@ export async function GET(request: Request): Promise<NextResponse> {
   const after = searchParams.get("after");
   if (after) params.set("after", after);
 
+  // Bookmarks live on the user/auth API, not the content API
+  const env = process.env.QF_ENV || "production";
+  const userApiBase = env === "production"
+    ? "https://apis.quran.foundation"
+    : "https://apis-prelive.quran.foundation";
+
   try {
-    const res = await fetch(`${apiBaseUrl}/auth/v1/bookmarks?${params.toString()}`, {
+    const res = await fetch(`${userApiBase}/auth/v1/bookmarks?${params.toString()}`, {
       headers: {
         "x-auth-token": accessToken,
         "x-client-id": clientId,

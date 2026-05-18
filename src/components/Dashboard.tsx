@@ -55,6 +55,13 @@ export function Dashboard({ projectId }: DashboardProps) {
   const [selectedBgImages, setSelectedBgImages] = useState<{ id: string; url: string; thumbnailUrl: string }[]>([]);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
 
+  // Overlay opacity (0-100)
+  const [overlayOpacity, setOverlayOpacity] = useState(55);
+
+  // Upload state
+  const [uploadedFiles, setUploadedFiles] = useState<{ id: string; url: string; thumbnailUrl: string; type: "image" | "video"; filename: string }[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; percent: number }>({ current: 0, total: 0, percent: 0 });
+
   // Auto-clip state
   const [clipSuggestions, setClipSuggestions] = useState<Array<{ ayahStart: number; ayahEnd: number; durationLabel: string; reason: string }>>([]);
   const [clipLoading, setClipLoading] = useState(false);
@@ -183,6 +190,7 @@ export function Dashboard({ projectId }: DashboardProps) {
 
       setProjectLoading(false);
     });
+    loadUploadedFiles();
   }, [projectId, router]);
 
   // Check Quran.com connection status
@@ -326,6 +334,85 @@ export function Dashboard({ projectId }: DashboardProps) {
     }
   };
 
+  // Upload functions
+  const loadUploadedFiles = async () => {
+    try {
+      const res = await fetch("/api/upload-background");
+      const data = await res.json();
+      if (data.files) setUploadedFiles(data.files);
+    } catch { /* ignore */ }
+  };
+
+  const handleFileUpload = async (files: FileList) => {
+    const CHUNK_SIZE = 512 * 1024; // 512KB chunks
+    setUploadProgress({ current: 0, total: files.length, percent: 0 });
+    for (let fi = 0; fi < files.length; fi++) {
+      const file = files[fi];
+      // Start session
+      const startRes = await fetch("/api/upload-background", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", filename: file.name, contentType: file.type }),
+      });
+      const { sessionId } = await startRes.json();
+
+      // Send chunks
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      for (let ci = 0; ci < totalChunks; ci++) {
+        const chunk = file.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE);
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string).split(",")[1]);
+          reader.readAsDataURL(chunk);
+        });
+        await fetch("/api/upload-background", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "chunk", sessionId, chunkIndex: ci, data: base64 }),
+        });
+      }
+
+      // Finish
+      const finishRes = await fetch("/api/upload-background", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "finish", sessionId }),
+      });
+      const data = await finishRes.json();
+      if (data.url) {
+        // Detect video duration
+        let duration = 10;
+        if (file.type.startsWith("video/")) {
+          duration = await new Promise<number>((resolve) => {
+            const vid = document.createElement("video");
+            vid.preload = "metadata";
+            vid.onloadedmetadata = () => { resolve(Math.round(vid.duration)); URL.revokeObjectURL(vid.src); };
+            vid.onerror = () => resolve(10);
+            vid.src = URL.createObjectURL(file);
+          });
+        }
+        setUploadedFiles((prev) => [...prev, data]);
+        // Auto-select as background
+        if (file.type.startsWith("video/")) {
+          setSelectedBgVideos((prev) => [...prev, { id: data.id, url: data.url, thumbnailUrl: data.thumbnailUrl, duration, width: 1080, height: 1920 }]);
+        } else {
+          setSelectedBgImages((prev) => [...prev, { id: data.id, url: data.url, thumbnailUrl: data.thumbnailUrl }]);
+        }
+      }
+      setUploadProgress({ current: fi + 1, total: files.length, percent: Math.round(((fi + 1) / files.length) * 100) });
+    }
+    setTimeout(() => setUploadProgress({ current: 0, total: 0, percent: 0 }), 2000);
+  };
+
+  const deleteUploadedFile = async (file: { id: string; filename: string }) => {
+    try {
+      await fetch(`/api/upload-background?id=${file.id}&filename=${encodeURIComponent(file.filename)}`, { method: "DELETE" });
+      setUploadedFiles((prev) => prev.filter((f) => f.id !== file.id));
+      setSelectedBgVideos((prev) => prev.filter((v) => v.id !== file.id));
+      setSelectedBgImages((prev) => prev.filter((img) => img.id !== file.id));
+    } catch { /* ignore */ }
+  };
+
   const fetchClipSuggestions = async () => {
     if (!selectedReciter) return;
     setClipLoading(true);
@@ -467,8 +554,9 @@ export function Dashboard({ projectId }: DashboardProps) {
           surahIntro,
           arabicFontSize: arabicFontSize ?? undefined,
           translationFontSize: translationFontSize ?? undefined,
-          translationId: selectedTranslation,
-          projectId,
+           translationId: selectedTranslation,
+           overlayOpacity,
+           projectId,
           dataSource: project?.dataSource || "local",
         }),
       });
@@ -1424,6 +1512,108 @@ export function Dashboard({ projectId }: DashboardProps) {
                     )}
                   </>
                 )}
+
+                {/* Upload section */}
+                <div className="border-t border-[#2a2a4a] pt-3 mt-3">
+                  <h4 className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Upload Your Own</h4>
+                  <label className="flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-[#2a2a4a] p-3 hover:border-emerald-500/50 transition-colors">
+                    <input
+                      type="file"
+                      accept="video/*,image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+                    />
+                    <span className="text-[10px] text-zinc-500">Drop or click to upload videos/images</span>
+                  </label>
+                  {uploadProgress.total > 0 && (
+                    <div className="mt-2">
+                      <div className="text-[9px] text-zinc-400 mb-1">
+                        Uploading {uploadProgress.current} of {uploadProgress.total}...
+                      </div>
+                      <div className="h-1 rounded-full bg-[#1a1a3a] overflow-hidden">
+                        <div className="h-full bg-emerald-500 transition-all" style={{ width: `${uploadProgress.percent}%` }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Uploaded files */}
+                {uploadedFiles.length > 0 && (
+                  <div className="mt-3">
+                    <h4 className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">Uploaded</h4>
+                    <div className="grid grid-cols-3 gap-1">
+                      {uploadedFiles.map((file) => {
+                        const isSelectedVid = selectedBgVideos.some((v) => v.id === file.id);
+                        const isSelectedImg = selectedBgImages.some((img) => img.id === file.id);
+                        const isSelected = isSelectedVid || isSelectedImg;
+                        return (
+                          <div
+                            key={file.id}
+                            className={`group relative overflow-hidden rounded border-2 transition-all cursor-pointer ${
+                              isSelected ? "border-emerald-500" : "border-transparent hover:border-zinc-600"
+                            }`}
+                            onClick={() => {
+                              if (file.type === "video") {
+                                if (isSelectedVid) {
+                                  setSelectedBgVideos((prev) => prev.filter((v) => v.id !== file.id));
+                                } else {
+                                  setSelectedBgVideos((prev) => [...prev, { id: file.id, url: file.url, thumbnailUrl: file.thumbnailUrl, duration: 10, width: 1080, height: 1920 }]);
+                                }
+                              } else {
+                                if (isSelectedImg) {
+                                  setSelectedBgImages((prev) => prev.filter((img) => img.id !== file.id));
+                                } else {
+                                  setSelectedBgImages((prev) => [...prev, { id: file.id, url: file.url, thumbnailUrl: file.thumbnailUrl }]);
+                                }
+                              }
+                            }}
+                          >
+                            {file.type === "video" ? (
+                              <video src={file.url} className="aspect-video w-full object-cover" muted />
+                            ) : (
+                              <img src={file.thumbnailUrl} alt="" className="aspect-video w-full object-cover" />
+                            )}
+                            <div className={`absolute top-0.5 right-0.5 h-4 w-4 rounded flex items-center justify-center text-[8px] font-bold ${
+                              isSelected ? "bg-emerald-500 text-white" : "bg-black/60 text-white opacity-0 group-hover:opacity-100"
+                            }`}>
+                              {isSelected ? "✓" : "+"}
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteUploadedFile(file); }}
+                              className="absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full bg-red-500/80 text-white text-[7px] flex items-center justify-center opacity-0 group-hover:opacity-100"
+                            >
+                              x
+                            </button>
+                            <div className="absolute bottom-0 left-0 bg-black/70 text-white text-[7px] px-0.5 rounded-tr">{file.type}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Overlay opacity */}
+                {(selectedBgVideos.length > 0 || selectedBgImages.length > 0) && (
+                  <div className="border-t border-[#2a2a4a] pt-3 mt-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Overlay Darkness</span>
+                      <span className="text-[10px] text-zinc-500">{overlayOpacity}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={90}
+                      value={overlayOpacity}
+                      onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+                      className="w-full h-1 appearance-none rounded-full bg-[#1a1a3a] accent-emerald-500 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[8px] text-zinc-600 mt-0.5">
+                      <span>Light</span>
+                      <span>Dark</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1489,6 +1679,7 @@ export function Dashboard({ projectId }: DashboardProps) {
                 backgroundVideoDurations={selectedBgVideos.map((v) => v.duration)}
                 backgroundImageUrls={selectedBgImages.map((img) => img.url)}
                 dataSource={project?.dataSource || "local"}
+                overlayOpacity={overlayOpacity}
               />
             )}
           </div>
