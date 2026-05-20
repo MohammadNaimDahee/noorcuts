@@ -29,6 +29,9 @@ const TEMP_DIR = path.join(process.cwd(), "output", ".tmp");
 const REMOTION_ENTRY = path.join(process.cwd(), "src", "remotion", "index.ts");
 const PREBUNDLED_PATH = path.join(process.cwd(), ".remotion-bundle");
 
+// Cache the runtime bundle path across renders to avoid re-bundling every time
+let cachedBundlePath: string | null = null;
+
 export type RenderProgressCallback = (stage: string, progress: number, jobId: number) => void;
 
 export async function triggerRender(
@@ -261,12 +264,15 @@ export async function triggerRender(
       overlayOpacity: overlayOpacity ?? 55,
     };
 
-    // Use pre-bundled composition if available (Docker build), otherwise bundle at runtime
+    // Use pre-bundled composition if available (Docker build), otherwise bundle at runtime (cached)
     emitProgress("Bundling composition", 25);
     let bundled: string;
     if (fs.existsSync(PREBUNDLED_PATH)) {
       console.log("[render] Using pre-bundled Remotion composition");
       bundled = PREBUNDLED_PATH;
+    } else if (cachedBundlePath && fs.existsSync(cachedBundlePath)) {
+      console.log("[render] Using cached runtime bundle:", cachedBundlePath);
+      bundled = cachedBundlePath;
     } else {
       console.log("[render] Bundling Remotion composition at runtime...");
       bundled = await bundle({
@@ -283,7 +289,8 @@ export async function triggerRender(
           },
         }),
       });
-      console.log("[render] Bundle complete:", bundled);
+      cachedBundlePath = bundled;
+      console.log("[render] Bundle complete (cached for reuse):", bundled);
     }
 
     const compositionId = `ShortVideo-${format}`;

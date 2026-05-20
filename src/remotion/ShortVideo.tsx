@@ -482,17 +482,20 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
 }) => {
   const { width, height } = useVideoConfig();
 
-  // Build @font-face declarations inside the component so staticFile() resolves correctly
+  // Build @font-face declarations — only load the selected Arabic font + English/fallback
   const fontFaces = useMemo(() => {
-    const faces = ARABIC_FONTS.map(
-      (f) => `@font-face {
-  font-family: '${f.family}';
-  src: url('${staticFile(`fonts/${f.file}`)}') format('truetype');
+    const faces: string[] = [];
+    // Only load the Arabic font that's actually selected
+    const selectedFont = ARABIC_FONTS.find((f) => f.family === arabicFontFamily);
+    if (selectedFont) {
+      faces.push(`@font-face {
+  font-family: '${selectedFont.family}';
+  src: url('${staticFile(`fonts/${selectedFont.file}`)}') format('truetype');
   font-weight: normal;
   font-style: normal;
   font-display: block;
-}`,
-    );
+}`);
+    }
     // Also load Cormorant Garamond (English) and Amiri (fallback)
     faces.push(`@font-face {
   font-family: 'Cormorant Garamond';
@@ -509,7 +512,7 @@ export const ShortVideo: React.FC<VideoCompositionProps> = ({
   font-display: block;
 }`);
     return faces.join("\n");
-  }, []);
+  }, [arabicFontFamily]);
   const isHorizontal = format === "horizontal";
   const isSquare = format === "square";
   const scaleFactor = isHorizontal ? 0.9 : isSquare ? 0.85 : 1;
