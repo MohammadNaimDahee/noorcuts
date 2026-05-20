@@ -12,11 +12,16 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   const { apiBaseUrl, clientId } = getQfOAuthConfig();
   const { searchParams } = new URL(request.url);
-  const first = searchParams.get("first") || "50";
 
-  const params = new URLSearchParams({ first });
+  const params = new URLSearchParams();
+  const first = searchParams.get("first");
+  if (first) params.set("first", first);
   const after = searchParams.get("after");
   if (after) params.set("after", after);
+  const type = searchParams.get("type");
+  if (type) params.set("type", type);
+
+  const queryString = params.toString() ? `?${params.toString()}` : "";
 
   // Bookmarks live on the user/auth API, not the content API
   const env = process.env.QF_ENV || "production";
@@ -25,7 +30,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     : "https://apis-prelive.quran.foundation";
 
   try {
-    const res = await fetch(`${userApiBase}/auth/v1/bookmarks?${params.toString()}`, {
+    const res = await fetch(`${userApiBase}/auth/v1/bookmarks${queryString}`, {
       headers: {
         "x-auth-token": accessToken,
         "x-client-id": clientId,
@@ -44,7 +49,7 @@ export async function GET(request: Request): Promise<NextResponse> {
         return response;
       }
 
-      return NextResponse.json({ error: "Failed to fetch bookmarks" }, { status: res.status });
+      return NextResponse.json({ error: "Failed to fetch bookmarks", detail: errText }, { status: res.status });
     }
 
     const data = await res.json();
