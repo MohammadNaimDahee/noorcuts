@@ -122,7 +122,7 @@ export function ProjectsHub() {
                     <button
                       type="button"
                       onClick={() => setNewDataSource("local")}
-                      className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                      className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors hidden ${
                         newDataSource === "local"
                           ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
                           : "border-[#2a2a4a] bg-[#0f0f20] text-zinc-400 hover:border-zinc-600"
