@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { bundle } from "@remotion/bundler";
-import { renderMedia, selectComposition, makeCancelSignal } from "@remotion/renderer";
+import { renderMedia, makeCancelSignal } from "@remotion/renderer";
 import {
   isSurahLevelReciter,
   getSurahLevelTimestamps,
@@ -187,35 +187,31 @@ export async function triggerRender(
       return { ayah: r.ayahNumber, words };
     });
 
-    // Download background videos if provided
+    // Download background videos if provided (parallel)
     // Videos must be in public/ so Remotion can serve them via staticFile()
     const bgVideoStaticPaths: string[] = [];
     if (backgroundVideos.length > 0) {
       emitProgress("Downloading background videos", 15);
       fs.mkdirSync(bgVideoPublicDir, { recursive: true });
-      for (let i = 0; i < backgroundVideos.length; i++) {
-        const bgVideo = backgroundVideos[i];
+      await Promise.all(backgroundVideos.map(async (bgVideo, i) => {
         const filename = `bg-video-${i}.mp4`;
         const localPath = path.join(bgVideoPublicDir, filename);
         if (bgVideo.url.startsWith("/")) {
-          // Local uploaded file — copy from public/
           const srcPath = path.join(process.cwd(), "public", bgVideo.url);
           fs.copyFileSync(srcPath, localPath);
         } else {
           await downloadFile(bgVideo.url, localPath);
         }
-        // staticFile() paths are relative to public/
-        bgVideoStaticPaths.push(`temp-bg/job-${jobId}/${filename}`);
-      }
+        bgVideoStaticPaths[i] = `temp-bg/job-${jobId}/${filename}`;
+      }));
     }
 
-    // Download background images if provided (user-selected from Pexels)
+    // Download background images if provided (parallel, user-selected from Pexels)
     const bgImageStaticPaths: string[] = [];
     if (backgroundImages.length > 0 && bgVideoStaticPaths.length === 0) {
       emitProgress("Downloading background images", 18);
       fs.mkdirSync(bgVideoPublicDir, { recursive: true });
-      for (let i = 0; i < backgroundImages.length; i++) {
-        const bgImg = backgroundImages[i];
+      await Promise.all(backgroundImages.map(async (bgImg, i) => {
         const ext = bgImg.url.includes(".png") ? "png" : "jpg";
         const filename = `bg-image-${i}.${ext}`;
         const localPath = path.join(bgVideoPublicDir, filename);
@@ -225,8 +221,8 @@ export async function triggerRender(
         } else {
           await downloadFile(bgImg.url, localPath);
         }
-        bgImageStaticPaths.push(`temp-bg/job-${jobId}/${filename}`);
-      }
+        bgImageStaticPaths[i] = `temp-bg/job-${jobId}/${filename}`;
+      }));
     }
 
     // Apply custom translations if provided
@@ -295,20 +291,36 @@ export async function triggerRender(
 
     const compositionId = `ShortVideo-${format}`;
     const isDocker = fs.existsSync("/.dockerenv") || !!process.env.REMOTION_CHROME_EXECUTABLE;
-    const chromiumOptions: Parameters<typeof selectComposition>[0]["chromiumOptions"] = {
+    const chromiumOptions: Parameters<typeof renderMedia>[0]["chromiumOptions"] = {
       disableWebSecurity: true,
       gl: isDocker ? "angle-egl" : "angle",
     };
-    console.log("[render] Selecting composition:", compositionId, "docker:", isDocker);
-    const composition = await selectComposition({
-      serveUrl: bundled,
-      id: compositionId,
-      inputProps: inputProps as unknown as Record<string, unknown>,
-      chromiumOptions,
-    });
-    console.log("[render] Composition selected, duration:", totalDurationFrames, "frames");
 
-    composition.durationInFrames = totalDurationFrames;
+    // Build composition statically to avoid spinning up Chromium just to read metadata
+    const formatDimensions: Record<string, { width: number; height: number }> = {
+      vertical: { width: 1080, height: 1920 },
+      horizontal: { width: 1920, height: 1080 },
+      square: { width: 1080, height: 1080 },
+    };
+    const dims = formatDimensions[format] || formatDimensions.vertical;
+    const composition = {
+      id: compositionId,
+      durationInFrames: totalDurationFrames,
+      fps: 30,
+      width: dims.width,
+      height: dims.height,
+      defaultProps: {},
+      props: inputProps as unknown as Record<string, unknown>,
+      defaultCodec: "h264" as const,
+      defaultOutName: null,
+      defaultVideoImageFormat: "jpeg" as const,
+      defaultPixelFormat: "yuv420p" as const,
+      calculateMetadata: null,
+      schema: null,
+      defaultProResProfile: null,
+      defaultSampleRate: 44100,
+    };
+    console.log("[render] Composition built statically, duration:", totalDurationFrames, "frames");
 
     emitProgress("Rendering video", 35);
     checkCancelled();
@@ -321,6 +333,7 @@ export async function triggerRender(
       inputProps: inputProps as unknown as Record<string, unknown>,
       cancelSignal,
       chromiumOptions,
+      concurrency: 1,
       onProgress: ({ progress }) => {
         // Rendering is 35-90% of total progress
         const pct = 35 + Math.round(progress * 55);

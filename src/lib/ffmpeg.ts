@@ -128,20 +128,17 @@ export async function downloadAndConcatAudio(
 ): Promise<{ outputPath: string; durationsMs: number[] }> {
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-  // Download all audio files
+  // Download all audio files in parallel
   const localPaths: string[] = [];
-  for (let i = 0; i < audioUrls.length; i++) {
+  const downloadPromises = audioUrls.map((url, i) => {
     const localPath = path.join(tempDir, `ayah-${i}.mp3`);
-    await downloadFile(audioUrls[i], localPath);
     localPaths.push(localPath);
-  }
+    return downloadFile(url, localPath);
+  });
+  await Promise.all(downloadPromises);
 
-  // Get exact duration for each file via ffprobe
-  const durationsMs: number[] = [];
-  for (const p of localPaths) {
-    const dur = await getAudioDurationMs(p);
-    durationsMs.push(dur);
-  }
+  // Get exact duration for each file via ffprobe (parallel)
+  const durationsMs = await Promise.all(localPaths.map((p) => getAudioDurationMs(p)));
 
   if (localPaths.length === 1) {
     fs.copyFileSync(localPaths[0], outputPath);
