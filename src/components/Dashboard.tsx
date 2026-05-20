@@ -238,7 +238,7 @@ export function Dashboard({ projectId }: DashboardProps) {
     if (!qfConnected) return;
     setQfBookmarksLoading(true);
     try {
-      const res = await fetch("/api/qf/bookmarks?type=ayah&mushafId=1&first=50");
+      const res = await fetch("/api/qf/bookmarks?type=ayah&mushafId=1&first=20");
       if (!res.ok) {
         if (res.status === 401) setQfConnected(false);
         return;
