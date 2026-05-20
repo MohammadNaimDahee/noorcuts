@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Project, DataSource } from "@/types";
 import { NoorLogo } from "./NoorLogo";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton, SignOutButton } from "@clerk/nextjs";
 
 export function ProjectsHub() {
   const router = useRouter();
@@ -55,11 +55,18 @@ export function ProjectsHub() {
         <div className="flex items-center gap-3">
           <NoorLogo size={28} />
         </div>
-        <UserButton
-          appearance={{
-            elements: { avatarBox: "h-8 w-8" },
-          }}
-        />
+        <div className="flex items-center gap-3">
+          <UserButton
+            appearance={{
+              elements: { avatarBox: "h-8 w-8" },
+            }}
+          />
+          <SignOutButton>
+            <button className="rounded px-2 py-1 text-[11px] text-red-400 hover:bg-red-600/10 transition-colors">
+              Logout
+            </button>
+          </SignOutButton>
+        </div>
       </div>
 
       {/* Content */}
