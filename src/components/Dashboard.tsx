@@ -219,6 +219,12 @@ export function Dashboard({ projectId }: DashboardProps) {
       url.searchParams.delete("qf_connected");
       window.history.replaceState({}, "", url.pathname + url.search);
     }
+    if (params.get("qf_disconnected") === "true") {
+      setQfConnected(false);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("qf_disconnected");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
     if (params.get("qf_error")) {
       setError(`Quran.com login failed: ${params.get("qf_error")}`);
       const url = new URL(window.location.href);
@@ -848,7 +854,16 @@ export function Dashboard({ projectId }: DashboardProps) {
           </div>
           {project?.dataSource === "quran.com" && (
             qfConnected ? (
-              <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">Quran.com</span>
+              <form action="/api/auth/qf/logout" method="POST" className="flex items-center gap-1">
+                <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-400">Quran.com</span>
+                <button
+                  type="submit"
+                  className="rounded px-1.5 py-0.5 text-[9px] text-red-400 hover:bg-red-600/10 transition-colors"
+                  title="Disconnect Quran.com"
+                >
+                  Logout
+                </button>
+              </form>
             ) : (
               <a
                 href="/api/auth/qf/login"
