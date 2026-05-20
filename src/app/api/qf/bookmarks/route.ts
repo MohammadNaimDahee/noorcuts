@@ -12,11 +12,9 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   const { apiBaseUrl, clientId } = getQfOAuthConfig();
   const { searchParams } = new URL(request.url);
-  const mushafId = searchParams.get("mushafId") || "1";
-  const type = searchParams.get("type") || "ayah";
   const first = searchParams.get("first") || "50";
 
-  const params = new URLSearchParams({ mushafId, type, first });
+  const params = new URLSearchParams({ first });
   const after = searchParams.get("after");
   if (after) params.set("after", after);
 
