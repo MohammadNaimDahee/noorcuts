@@ -55,10 +55,10 @@ export function ProjectsHub() {
         <div className="flex items-center gap-3">
           <NoorLogo size={28} />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 z-10">
           <UserButton
             appearance={{
-              elements: { avatarBox: "h-8 w-8" },
+              elements: { avatarBox: "h-8 w-8 ring-1 ring-zinc-600" },
             }}
           />
         </div>
