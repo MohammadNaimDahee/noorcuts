@@ -14,6 +14,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
 
   const params = new URLSearchParams();
+  params.set("mushafId", searchParams.get("mushafId") || "1");
   const first = searchParams.get("first");
   if (first) params.set("first", first);
   const after = searchParams.get("after");
@@ -21,7 +22,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const type = searchParams.get("type");
   if (type) params.set("type", type);
 
-  const queryString = params.toString() ? `?${params.toString()}` : "";
+  const queryString = `?${params.toString()}`;
 
   // Bookmarks live on the user/auth API, not the content API
   const env = process.env.QF_ENV || "production";
