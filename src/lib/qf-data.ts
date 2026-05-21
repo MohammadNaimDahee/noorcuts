@@ -126,6 +126,10 @@ export async function fetchAyahData(
     const filteredAudio = qfAudio.filter((a) => {
       const ayahNum = parseInt(a.verse_key.split(":")[1], 10);
       return ayahNum >= ayahStart && ayahNum <= ayahEnd;
+    }).sort((a, b) => {
+      const ayahA = parseInt(a.verse_key.split(":")[1], 10);
+      const ayahB = parseInt(b.verse_key.split(":")[1], 10);
+      return ayahA - ayahB;
     });
     if (filteredAudio.length === 0) {
       throw new Error(`No audio found for reciter ${reciterId}, surah ${surah}`);
